@@ -12,9 +12,12 @@
 /* Called before each frame to fill in the radio's state. */
 typedef void (*display_state_t)(scene_radio_t *state);
 
-/* True when a screen answered. */
+/* True when a screen answered. With POKELDN_AUDIO the scene task still starts without one, because
+   it also cues the speaker. */
 bool display_start(display_state_t state);
-/* A DISPLAY command, handed to the screen's task; false when it was not taken (no screen, a full
+/* True when a screen answered: the wire's CMD_DISPLAY reply, ESP_ERR_NOT_FOUND when it did not. */
+bool display_present(void);
+/* A DISPLAY command, handed to the scene's task; false when it was not taken (no scene task, a full
    queue). Never blocks the caller. */
 bool display_command(const uint8_t *payload, size_t length);
 void display_reset(void);

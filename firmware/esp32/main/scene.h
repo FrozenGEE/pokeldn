@@ -39,9 +39,30 @@ enum scene_panel { PANEL_128X64, PANEL_72X40 };
 #define SMALL_W 72
 #define SMALL_H 40
 
+/* The speaker cue a frame starts: the traded show's ball-in, transfer jingle, link beeps, the
+   received ball opening, and the received Pokemon. */
+enum scene_audio {
+    SCENE_AUDIO_NONE,
+    SCENE_AUDIO_TRADE,      /* transfer jingle, 600 ms after the ball-in */
+    SCENE_AUDIO_RECEIVED,   /* received Pokemon, REVEAL_MS after the reveal */
+    SCENE_AUDIO_BALL_IN,    /* the traded Pokemon goes into its ball */
+    SCENE_AUDIO_LINK,       /* data beeps during the exchange */
+    SCENE_AUDIO_BALL_OUT,   /* the received ball opens */
+};
+
 void scene_panel(uint8_t panel);
 /* False for a malformed command. */
 bool scene_command(const uint8_t *payload, size_t length, uint32_t now_ms);
+/* One cue per event: ball-in at the start, the transfer jingle, link beeps during the exchange,
+   the ball opening at reveal + 1000 ms, and the received Pokemon at reveal + REVEAL_MS.
+   Called every frame like scene_draw; 0 when this frame starts nothing. */
+uint8_t scene_audio_cue(uint32_t now_ms);
 /* Back to the radio's own scenes and no sprites: a new host session. */
 void scene_reset(void);
 uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now_ms);
+/* The show the scene is drawing: enum scene_show (SHOW_AUTO when none). */
+uint8_t scene_show(void);
+/* True during the traded show's exchange phase ("trading..."). */
+bool scene_traded_exchanging(uint32_t now_ms);
+/* True during the traded ball-flash phase; progress is 0..1000. */
+bool scene_traded_opening(uint32_t now_ms, uint32_t *progress);

@@ -1,5 +1,6 @@
-"""The board's screen drawn in the Session panel: a run's `[screen]` lines (pokeldn.ldn.esp32_wlan) replayed
-through pokeldn.app.screen_render, the firmware's scenes in Python. docs/gui.md, The board's screen."""
+"""The board's screen drawn in the Session panel: a run's `[screen]` lines (pokeldn.ldn.esp32_wlan)
+replayed through pokeldn.app.screen_render_gee, the GEE firmware's 320x240 pages in Python.
+docs/gui.md, The board's screen."""
 import struct
 import threading
 import time
@@ -8,11 +9,14 @@ import zlib
 import flet as ft
 
 from gui import theme as t
-from pokeldn.app import screen_render
+from pokeldn.app import screen_render_gee as screen_render
 from pokeldn.ldn.esp32_wlan import MIRROR_PREFIX
 
-WIDTH, HEIGHT = 128, 64
-SCALE = 2
+WIDTH, HEIGHT = screen_render.W, screen_render.H
+# The Session panel is 360 px wide: 18 px padding each side, then the board control's 10 px and
+# 1 px border. Keep the 320x240 frame internal and let Flet scale it to 300x225.
+DISPLAY_W = t.SESSION_WIDTH - 60
+DISPLAY_H = DISPLAY_W * HEIGHT // WIDTH
 FRAME_S = 0.05            # display.c FRAME_MS
 ON, DIM, OFF = 0, 1, 2    # scene.h enum scene_power
 LIT = bytes.fromhex(t.BLUE[1:])
@@ -37,9 +41,10 @@ class BoardScreen:
         self.lock = threading.Lock()
         self.shown = None
         self.running = False
-        self.image = ft.Image(src=t.image_src(png([[False] * WIDTH] * HEIGHT)), width=WIDTH * SCALE,
-                              height=HEIGHT * SCALE, fit=ft.BoxFit.FILL, filter_quality=ft.FilterQuality.NONE,
-                              anti_alias=False, gapless_playback=True)
+        self.image = ft.Image(src=t.image_src(png([[False] * WIDTH] * HEIGHT)), width=DISPLAY_W,
+                              height=DISPLAY_H, fit=ft.BoxFit.CONTAIN,
+                              filter_quality=ft.FilterQuality.NONE, anti_alias=False,
+                              gapless_playback=True)
         self.control = ft.Container(self.image, bgcolor="#0B0B0D", border_radius=10, padding=10,
                                     border=ft.Border.all(1, t.BORDER), alignment=ft.Alignment.CENTER,
                                     visible=False)

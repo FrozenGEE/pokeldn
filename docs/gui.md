@@ -386,6 +386,12 @@ The shipped version is the ESP-IDF app descriptor's `version` (magic `0xABCD5432
 merged image). An S3 running the Controller firmware gets the download command over Bluetooth; the app
 waits 20 s for the loader port and flashes with `--from-loader`.
 
+`pokeldn-gee` also carries `gui/firmware/pokeldn-radio-gee-s3.bin`, the FrozenGEE v0.9.3 ESP32-S3
+image: 320x240 screen, ES8311 speaker, ES7210 microphone, GC0308 camera and the trade sound effects at
+75% default volume. When the file is present, `gui.board.image_for` uses it for Wireless on an
+ESP32-S3, so the same row's Install/Update flashes it; the other chips, Controller and Bluetooth
+wireless keep the released images. A source checkout has no such file and uses the released S3 image.
+
 A board kept as a [portable beacon](hardware_esp32.md#portable-beacon) shows Kept gift with Remove.
 
 ### Board details

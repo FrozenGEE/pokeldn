@@ -27,10 +27,20 @@ if(DEFINED ENV{POKELDN_BLE})
     set(ble_component bt)
 endif()
 
+# The speaker (audio.c, a MAX98357A on the Xiaozhi AI breadboard wiring): POKELDN_AUDIO=1 in the
+# environment of idf.py, on the esp32s3 target. docs/hardware_esp32.md, The speaker.
+if(DEFINED ENV{POKELDN_AUDIO})
+    if(NOT idf_target STREQUAL "esp32s3")
+        message(FATAL_ERROR "POKELDN_AUDIO=1 needs the esp32s3 target")
+    endif()
+    set(audio_source "audio.c")
+    set(audio_driver esp_driver_i2s)
+endif()
+
 idf_component_register(
-    SRCS "radio.c" "advert.c" "beacon.c" "gift_ldn.c" "gift_pia.c" "gift_link.c" "gift_mg.c" "gift_zstd.c" "ble.c" "wire.c" "led.c" "usbwatch.c" "display.c" ${panel_source} "scene.c" "screen.c"
+    SRCS "radio.c" "advert.c" "beacon.c" "gift_ldn.c" "gift_pia.c" "gift_link.c" "gift_mg.c" "gift_zstd.c" "ble.c" "wire.c" "led.c" "usbwatch.c" "display.c" ${panel_source} "scene.c" "screen.c" ${audio_source}
     INCLUDE_DIRS "."
-    PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio ${panel_driver} esp_timer nvs_flash esp_event mbedtls zstd ${ble_component})
+    PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio ${panel_driver} esp_timer nvs_flash esp_event mbedtls zstd ${ble_component} ${audio_driver})
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_DISPLAY_${POKELDN_DISPLAY}
                            POKELDN_FIRMWARE_VERSION="${POKELDN_FIRMWARE_VERSION}")
@@ -44,4 +54,8 @@ endif()
 # sdkconfig.defaults.ble. docs/hardware_esp32.md, Bluetooth.
 if(DEFINED ENV{POKELDN_BLE})
     target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_BLE=1)
+endif()
+
+if(DEFINED ENV{POKELDN_AUDIO})
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_AUDIO=1)
 endif()

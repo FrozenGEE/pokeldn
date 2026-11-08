@@ -332,6 +332,12 @@ class BoardView:
             fits = not f.chip or f.chip in fw.chips
             if installed:
                 trailing = t.chip(tr('boards.installed_b9a401', 'Installed · {value0}', value0=f.version) if f.version else tr('boards.installed_f8b32f', 'Installed'), "check", t.GREEN)
+                # An installed firmware can be flashed again. On an ESP32-S3 the Wireless row
+                # uses the GEE image; the Bluetooth wireless and Controller rows use theirs.
+                if fits and self.available(fw):
+                    trailing = ft.Row([trailing, t.secondary_button(
+                        tr('boards.reinstall', 'Reinstall'), lambda e, w=fw: self.confirm(w), "download",
+                        disabled=busy or not self.available(fw))], spacing=8)
             elif not fits:
                 trailing = t.text(tr('boards.not_available_on_40a206', 'Not available on {value0}', value0=f.chip), 12, t.FAINT)
             else:

@@ -95,6 +95,26 @@ def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(sma
 
 
 @needs_cc
+def test_the_speaker_cues_the_ball_link_and_received_pokemon(scene, built):
+    assert scene.command(esp32.display_show_payload("trade", 0, "Sw/Sh", "Eevee"))
+    assert built.scene_audio_cue(scene.now) == 0      # an offer is silent
+    assert scene.command(esp32.display_show_payload("traded", 10, "Sw/Sh", "Mewtwo"))
+    assert built.scene_audio_cue(scene.now) == 3      # ball-in at the start
+    assert built.scene_audio_cue(scene.now) == 0      # once per show
+    scene.advance(600)
+    assert built.scene_audio_cue(scene.now) == 1      # the transfer jingle
+    assert built.scene_audio_cue(scene.now) == 0
+    scene.advance(1800)                               # 2.4 s: the first link beep
+    assert built.scene_audio_cue(scene.now) == 4
+    scene.advance(8600)                               # 11 s: reveal + 1 s, the ball opens
+    assert built.scene_audio_cue(scene.now) == 5
+    assert built.scene_audio_cue(scene.now) == 0
+    scene.advance(600)                                # 11.6 s: reveal + REVEAL_MS
+    assert built.scene_audio_cue(scene.now) == 2      # the received Pokemon
+    assert built.scene_audio_cue(scene.now) == 0
+
+
+@needs_cc
 def test_malformed_commands_are_refused(scene):
     good = esp32.display_sprite_payload("theirs", [[True] * 8] * 2)
     assert scene.command(good)

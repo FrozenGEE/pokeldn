@@ -10,6 +10,7 @@
 #define DOT_MS 900          /* a packet's time from one end of a cable to the other */
 #define DOT_GAP_MS 70       /* at most one packet drawn per direction per gap */
 #define LEAVE_MS 2100       /* ours flashes, returns to its ball and leaves */
+#define LINK_MS 1200        /* one data beep in the exchange */
 #define REVEAL_MS 1600      /* theirs comes in and its ball opens */
 #define RECEIVED_MS 10000   /* then it stays */
 #define DIM_MS 60000        /* an idle radio's screen dims after a minute with nothing happening */
@@ -34,6 +35,8 @@ static struct {
     show_t now, next;       /* next: a lasting show that waits for a timed one to end */
     bool has_next;
     uint8_t radio_mode;     /* the last frame's, to see a session end */
+    uint8_t audio_stage;    /* a traded show's speaker cues sent; see scene_audio_cue() */
+    uint32_t audio_link;    /* next link beep in the exchange phase */
     uint32_t started;
     uint32_t reveal;        /* a traded show: ms after its start when theirs starts coming in */
     sprite_t sprite[SLOTS];
@@ -101,10 +104,14 @@ static void console_icon(uint8_t *fb, int x, int y)   /* 22x12: a handheld with 
 {
     fb_fill(fb, x, y + 1, 4, 10, true);
     fb_fill(fb, x + 18, y + 1, 4, 10, true);
+    /* Rounded outer corners, top and bottom alike. */
     fb_pixel(fb, x, y + 1, false);
     fb_pixel(fb, x + 21, y + 1, false);
+    fb_pixel(fb, x, y + 10, false);
+    fb_pixel(fb, x + 21, y + 10, false);
     fb_rect(fb, x + 4, y, 14, 12);
     fb_fill(fb, x + 6, y + 2, 10, 8, true);
+    /* Like a Switch: the left stick sits high, the right stick sits low. */
     fb_pixel(fb, x + 1, y + 4, false);
     fb_pixel(fb, x + 20, y + 7, false);
 }
@@ -205,10 +212,17 @@ static void dots_step(uint32_t rx, uint32_t tx, uint32_t now)
     if (tx != d.tx && now - d.tx_ms >= DOT_GAP_MS) { dot_spawn(-1); d.tx_ms = now; d.tx = tx; }
 }
 
-/* A dotted cable from the console's end (x0) to ours (x1), with the packets on it. */
+/* A dashed cable from the console's end (x0) to ours (x1), with the packets on it.
+   x0/x1 may be given in either order; the order only sets the packet direction.
+   The 2 px dash / 3 px gap becomes ~5/7 px after the 304x157 blit, matching the native
+   linked page's dashes. */
 static void cable(uint8_t *fb, int x0, int x1, int y)
 {
-    for (int x = x0; x <= x1; x += 2) fb_pixel(fb, x, y, true);
+    const int lo = x0 < x1 ? x0 : x1, hi = x0 < x1 ? x1 : x0;
+    for (int x = lo; x <= hi; x += 5) {
+        fb_pixel(fb, x, y, true);
+        if (x + 1 <= hi) fb_pixel(fb, x + 1, y, true);
+    }
     for (int i = 0; i < DOTS; ++i) {
         if (!d.dir[i]) continue;
         const int along = d.dir[i] > 0 ? d.at[i] : 1000 - d.at[i];
@@ -251,7 +265,7 @@ static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
             const int radius = 8 + (int)((t + k * 500) % 1500) * 26 / 1500;
             fb_circle(fb, 64, 34, radius, false, true);
         }
-        fb_fill(fb, 50, 22, 29, 25, false);
+        fb_circle(fb, 64, 34, 10, true, false);   /* clear only the ball's silhouette, not a square */
         poke_ball(fb, 64, 34, 9);
         fb_fill(fb, 0, 54, SCREEN_W, 10, false);
         fb_text_centered(fb, 56, r->mode == SCENE_JOINING ? "looking for a console" : "waiting for a console", 1);
@@ -370,7 +384,6 @@ static void card(uint8_t *fb, int x, int y)   /* a Wonder Card, 58x48 */
     fb_fill(fb, x, y, 58, 48, false);
     fb_rect(fb, x, y, 58, 48);
     fb_rect(fb, x + 2, y + 2, 54, 44);
-    for (int i = 4; i < 54; i += 4) fb_pixel(fb, x + i, y + 4, true);
     if (!sprite_draw(fb, SLOT_GIFT, x + 29, y + 44)) gift_box(fb, x + 29, y + 26);
 }
 
@@ -380,7 +393,9 @@ static void gift_scene(uint8_t *fb, uint32_t now)
     card(fb, 0, 14 - (int)(now / 600 % 2));
     text_wrapped(fb, 63, 16, 10, s.now.line);
     console_icon(fb, 105, 50);
-    cable(fb, 103, 62, 56);
+    /* Console end first: packets flow like the trade page. Dots 63..99 leave 5 px to the
+       card's right edge (57) and 5 px to the console icon's left edge (105). */
+    cable(fb, 99, 63, 56);
 }
 
 static void gifted_scene(uint8_t *fb, uint32_t now)
@@ -442,7 +457,7 @@ static void small_radio(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         const uint32_t t = now % 1500;
         for (int k = 0; k < 3; ++k)
             fb_circle(fb, 36, 25, 6 + (int)((t + k * 500) % 1500) * 14 / 1500, false, true);
-        fb_fill(fb, 28, 17, 17, 17, false);
+        fb_circle(fb, 36, 25, 7, true, false);   /* clear only the ball's silhouette, not a square */
         poke_ball(fb, 36, 25, 6);
         fb_fill(fb, 0, 0, SMALL_W, 10, false);
         small_text(fb, 0, 0, r->mode == SCENE_JOINING ? "joining" : "hosting");
@@ -580,6 +595,8 @@ static void start(const show_t *show, uint32_t now)
 {
     s.now = *show;
     s.started = now;
+    s.audio_stage = 0;
+    s.audio_link = 0;
     /* A traded show's hold is the wait before theirs comes in: the console's animation. */
     const uint32_t wait = show->hold_s * 1000u;
     s.reveal = wait > LEAVE_MS + 1000 ? wait : LEAVE_MS + 1000;
@@ -646,6 +663,75 @@ void scene_reset(void)
 {
     memset(&s, 0, sizeof(s));
     wake.pending = true;
+}
+
+uint8_t scene_show(void) { return s.now.show; }
+
+/* The speaker's cues: the traded Pokemon goes into its ball, the transfer jingle, data beeps while
+   the exchange runs, the received ball opening at reveal + 1000 ms, and the received Pokemon at
+   reveal + REVEAL_MS. An early ARRIVED moves the reveal and all later cues with it. */
+uint8_t scene_audio_cue(uint32_t now_ms)
+{
+    if (s.now.show != SHOW_TRADED) return SCENE_AUDIO_NONE;
+    const uint32_t t = elapsed(now_ms);
+
+    /* 0: ball-in; 1: transfer jingle; 2: first link beep; 3: later link beeps;
+       4: ball-out; 5: received; 6: done. */
+    if (s.audio_stage == 0) {
+        s.audio_stage = 1;
+        return SCENE_AUDIO_BALL_IN;
+    }
+    if (s.audio_stage == 1 && t >= 600) {
+        s.audio_stage = 2;
+        return SCENE_AUDIO_TRADE;
+    }
+    if (s.audio_stage == 2) {
+        const uint32_t first = LEAVE_MS + 300;
+        if (t >= first && t + 150 < s.reveal) {
+            s.audio_stage = 3;
+            s.audio_link = t + LINK_MS;
+            return SCENE_AUDIO_LINK;
+        }
+        if (t >= s.reveal) s.audio_stage = 4;
+    }
+    if (s.audio_stage == 3) {
+        if (t + 150 < s.reveal) {
+            if (t >= s.audio_link) {
+                s.audio_link = t + LINK_MS;
+                return SCENE_AUDIO_LINK;
+            }
+        } else {
+            s.audio_stage = 4;
+        }
+    }
+    if (s.audio_stage == 4 && t >= s.reveal + 1000) {
+        s.audio_stage = 5;
+        return SCENE_AUDIO_BALL_OUT;
+    }
+    if (s.audio_stage == 5 && t >= s.reveal + REVEAL_MS) {
+        s.audio_stage = 6;
+        return SCENE_AUDIO_RECEIVED;
+    }
+    return SCENE_AUDIO_NONE;
+}
+
+/* True during the traded show's exchange phase ("trading..."): LEAVE_MS .. s.reveal. */
+bool scene_traded_exchanging(uint32_t now_ms)
+{
+    if (s.now.show != SHOW_TRADED) return false;
+    const uint32_t t = elapsed(now_ms);
+    return t >= LEAVE_MS && t < s.reveal;
+}
+
+/* True during the traded ball-flash phase; progress is 0..1000 across that phase. */
+bool scene_traded_opening(uint32_t now_ms, uint32_t *progress)
+{
+    if (s.now.show != SHOW_TRADED) return false;
+    const uint32_t t = elapsed(now_ms);
+    const uint32_t start = s.reveal + 1000;
+    if (t < start || t >= s.reveal + REVEAL_MS) return false;
+    if (progress) *progress = (t - start) * 1000 / (REVEAL_MS - 1000);
+    return true;
 }
 
 /* Anything happening restarts the clock: a running radio, a trade or gift animation, a host

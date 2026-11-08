@@ -205,12 +205,14 @@ class Scene:
     def console_icon(self, x, y):
         self.fill(x, y + 1, 4, 10)
         self.fill(x + 18, y + 1, 4, 10)
-        self.pixel(x, y + 1, False)
+        self.pixel(x, y + 1, False)     # rounded outer corners, top and bottom alike
         self.pixel(x + 21, y + 1, False)
+        self.pixel(x, y + 10, False)
+        self.pixel(x + 21, y + 10, False)
         self.rect(x + 4, y, 14, 12)
         self.fill(x + 6, y + 2, 10, 8)
-        self.pixel(x + 1, y + 4, False)
-        self.pixel(x + 20, y + 7, False)
+        self.pixel(x + 1, y + 4, False)    # left stick high
+        self.pixel(x + 20, y + 7, False)   # right stick low, like a Switch
 
     def gift_box(self, cx, cy):
         self.rect(cx - 10, cy - 3, 21, 14)
@@ -297,8 +299,13 @@ class Scene:
             self.d_tx_ms, self.d_tx = now, tx
 
     def cable(self, x0, x1, y):
-        for x in range(x0, x1 + 1, 2):
+        # x0/x1 may be in either order; the order only sets the packet direction.
+        # 2 px dash / 3 px gap; after the 304x157 blit this matches the native 5/7 dashes.
+        lo, hi = min(x0, x1), max(x0, x1)
+        for x in range(lo, hi + 1, 5):
             self.pixel(x, y)
+            if x + 1 <= hi:
+                self.pixel(x + 1, y)
         for i in range(DOTS):
             if not self.d_dir[i]:
                 continue
@@ -334,7 +341,7 @@ class Scene:
             t = now % 1500
             for k in range(3):
                 self.circle(64, 34, 8 + ((t + k * 500) % 1500) * 26 // 1500, False, True)
-            self.fill(50, 22, 29, 25, False)
+            self.circle(64, 34, 10, True, False)
             self.poke_ball(64, 34, 9)
             self.fill(0, 54, W, 10, False)
             self.text_centered(56, b"looking for a console" if mode == JOINING else b"waiting for a console")
@@ -430,8 +437,6 @@ class Scene:
         self.fill(x, y, 58, 48, False)
         self.rect(x, y, 58, 48)
         self.rect(x + 2, y + 2, 54, 44)
-        for i in range(4, 54, 4):
-            self.pixel(x + i, y + 4)
         if not self.sprite_draw(GIFT_SLOT, x + 29, y + 44):
             self.gift_box(x + 29, y + 26)
 
@@ -440,7 +445,8 @@ class Scene:
         self.card(0, 14 - now // 600 % 2)
         self.text_wrapped(63, 16, 10, self.now.line)
         self.console_icon(105, 50)
-        self.cable(103, 62, 56)
+        # console end first; dots 63..99 leave 5 px to the card and 5 px to the icon
+        self.cable(99, 63, 56)
 
     def gifted_scene(self, now):
         t = self.elapsed(now)
@@ -489,7 +495,7 @@ class Scene:
             t = now % 1500
             for k in range(3):
                 self.circle(36, 25, 6 + ((t + k * 500) % 1500) * 14 // 1500, False, True)
-            self.fill(28, 17, 17, 17, False)
+            self.circle(36, 25, 7, True, False)
             self.poke_ball(36, 25, 6)
             self.fill(0, 0, SMALL_W, 10, False)
             self.small_text(0, 0, b"joining" if mode == JOINING else b"hosting")

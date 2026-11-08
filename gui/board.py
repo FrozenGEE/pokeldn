@@ -42,6 +42,10 @@ FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # writte
 FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
 FIRMWARE_C3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c3.bin")
 FIRMWARE_C6 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c6.bin")
+# This build's ESP32-S3 image for the Wireless mode: the FrozenGEE v0.9.3 board firmware (320x240
+# screen, ES8311 speaker, ES7210 microphone, GC0308 camera, trade SFX at 75% volume). Absent in a
+# source checkout, where the released S3 image is used and the Board page downloads it as usual.
+FIRMWARE_GEE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-gee-s3.bin")
 # The Bluetooth host link for the iOS app (docs/hardware_esp32.md, Bluetooth); built for these two chips.
 FIRMWARE_BLE = {"ESP32": os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-ble.bin"),
                 "ESP32-C6": os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-ble-c6.bin")}
@@ -74,11 +78,18 @@ FIRMWARE_BY_KIND = {f.kind: f for f in FIRMWARES}
 CHIP_NAMES = {"esp32": "ESP32", "esp32s3": "ESP32-S3", "esp32c3": "ESP32-C3", "esp32c6": "ESP32-C6"}
 
 
+def gee_firmware() -> bool:
+    """Whether this build carries the FrozenGEE ESP32-S3 Wireless image."""
+    return os.path.isfile(FIRMWARE_GEE_S3)
+
+
 def image_for(kind: str, chip: str) -> str:
     if kind == "pad":
         return FIRMWARE_PAD if chip == "ESP32-S3" else FIRMWARE_PAD_ESP32
     if kind == "radio_ble":
         return FIRMWARE_BLE[chip]
+    if chip == "ESP32-S3" and gee_firmware():
+        return FIRMWARE_GEE_S3
     return bundled_firmware(chip)
 
 

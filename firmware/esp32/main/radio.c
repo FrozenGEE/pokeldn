@@ -23,6 +23,9 @@
 
 #include "beacon.h"
 #include "display.h"
+#if POKELDN_AUDIO
+#include "audio.h"
+#endif
 #include "gift.h"
 #include "led.h"
 #include "private_wifi.h"
@@ -1087,8 +1090,9 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         break;
     }
     case CMD_BEACON: beacon_command(p, n); break;
-    case CMD_DISPLAY:   /* scene.h; ESP_ERR_NOT_FOUND without a screen */
-        result(type, display_command(p, n) ? 0 : ESP_ERR_NOT_FOUND);
+    case CMD_DISPLAY:   /* scene.h; ESP_ERR_NOT_FOUND without a screen, even when POKELDN_AUDIO
+                           takes the command to cue the speaker */
+        result(type, display_command(p, n) && display_present() ? 0 : ESP_ERR_NOT_FOUND);
         break;
     default: result(type, ESP_ERR_NOT_SUPPORTED);
     }
@@ -1136,6 +1140,9 @@ void app_main(void)
     wire_start(command);
     usbwatch_start();
     led_start(led_state, button_pressed);
+#if POKELDN_AUDIO
+    audio_init();
+#endif
     display_start(display_state);
     send_info();
     bool beacon_due = beacon_image() != NULL;
