@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Build pokeldn-gee: this fork's Flet app (GEE 320x240 Session mirror and v0.9.0 board firmware)
-as a Windows one-folder app.
+"""Build pokeldn-gee: this fork's Flet app (GEE 320x240 Session mirror) as a Windows one-folder app.
 
     .gee-build-venv\\Scripts\\python.exe scripts\\build_gee_app.py
 
@@ -26,11 +25,6 @@ NAME = "pokeldn-gee"
 OUT = DIST_PARENT / NAME
 FINAL = ROOT / NAME
 OFFICIAL = Path(os.environ.get("POKELDN_OFFICIAL", r"D:\Users\GEE\Desktop\pokeldn\_internal"))
-# GEE board build 0.9.6 (upstream firmware 1.10.0): 320x240 screen, ES8311 speaker, ES7210
-# microphone, GC0308 camera, the exchange sound effects, default volume 75% and the Poké Ball
-# wobble animation. Merged image.
-GEE_IMAGE = Path(os.environ.get(
-    "POKELDN_GEE_IMAGE", r"D:\vs-code\gee\backup\gee-v0.9.6-full-20261108.bin"))
 
 
 def need(path: Path) -> Path:
@@ -56,10 +50,6 @@ def main() -> int:
     need(OFFICIAL / "services/pkhex/dist/pokeldn-pkhex.exe")
     need(OFFICIAL / "gui/firmware")
     need(OFFICIAL / "flet_desktop/app/flet-windows.zip")
-    need(GEE_IMAGE)
-    image = GEE_IMAGE.read_bytes()
-    if image[:1] != b"\xe9" or int.from_bytes(image[12:14], "little") != 9:
-        raise SystemExit(f"not a merged ESP32-S3 image: {GEE_IMAGE}")
     fw = sorted((OFFICIAL / "gui/firmware").glob("pokeldn-*.bin"))
     if len(fw) < 8:
         raise SystemExit(f"only {len(fw)} firmware images found under {OFFICIAL / 'gui/firmware'}")
@@ -117,7 +107,7 @@ def main() -> int:
         "--product-name", NAME,
         "--product-version", __version__,
         "--file-version", f"{__version__}.0",
-        "--bundle-id", "io.github.decryptu.pokeldn.gee",
+        "--bundle-id", "io.github.decryptu.pokeldn",
         "--icon", ROOT / "gui" / "assets" / "icon.ico",
     ]
     for src, dest in add:
@@ -143,11 +133,6 @@ def main() -> int:
     need(OUT)
     shutil.copytree(OUT, FINAL)
 
-    # The Wireless mode on an ESP32-S3 picks this image when it sits beside the released ones.
-    firmware_dir = FINAL / "_internal" / "gui" / "firmware"
-    firmware_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(GEE_IMAGE, firmware_dir / "pokeldn-radio-gee-s3.bin")
-
     # The official packer clears PyInstaller's Control Flow Guard: Unicorn faults under it
     # (0xC0000409). The frozen self-check exercises it.
     from scripts.pack_app import clear_cfg
@@ -169,18 +154,25 @@ def main() -> int:
         "Windows build of pokeldn 0.60.2 with the GEE 320x240 Session screen mirror.\n"
         "The board's status, exchange and opening pages are rendered at 320x240 and\n"
         "scaled proportionally to 300x225 in the Session panel.\n"
-        "Based on the official pokeldn source; GEE board builds 0.9.3, 0.9.5 and 0.9.6 are merged in.\n"
-        "Firmware 1.10.0 (upstream) · GEE build 0.9.6 · pokeldn 0.60.2\n\n"
+        "Based on the official pokeldn source; the GEE Session-screen changes are merged in.\n"
+        "Official firmware 1.10.0 · pokeldn 0.60.2\n\n"
         "v0.9.1: the Session mirror reads firmware/esp32/version.txt, so it shows\n"
         "v1.10.0 instead of vunknown.\n\n"
         "v0.9.5: the installed-state Wireless button says Reinstall / 重新安装.\n\n"
-        "GEE build 0.9.6 (firmware 1.10.0): Poké Ball wobble animation on the\n"
-        "idle/sniffing page.\n\n"
-        "The Wireless firmware on an ESP32-S3 is the GEE board build 0.9.6 image\n"
-        "(upstream firmware 1.10.0): the board's 320x240 screen, ES8311 speaker,\n"
-        "ES7210 microphone, GC0308 camera, the exchange sound effects, a 75% default\n"
-        "volume and the ball wobble animation. The other modes keep the released\n"
-        "firmware images.\n\n"
+        "GEE app build 0.9.8: Settings, Storage backs up the settings, plugins and\n"
+        "every Pokemon file into one zip, sorted into folders, either to a folder\n"
+        "on this computer or to WebDAV (address, account, password and a\n"
+        "connection dot). prod.keys is off by default; its switch adds it.\n"
+        "WebDAV keeps one pokeldn-backup.zip: local-to-cloud replaces it, and\n"
+        "cloud-to-local replaces this computer. A local pokeldn zip can also be\n"
+        "restored; every backup, sync and restore needs a ticked confirmation.\n\n"
+        "GEE app build 0.9.7: Exchange history and favorites on the Bank page, a\n"
+        "one-press Clear records, the GitHub accelerator in Settings, the phone\n"
+        "card/About layout, and the Chinese pack updated to 1.0.6.\n\n"
+        "The Board page flashes the official firmware images for every chip,\n"
+        "including the ESP32-S3 Wireless image (firmware 1.10.0). The GEE board\n"
+        "image is not bundled; the Board page downloads from the official\n"
+        "pokeldn releases when an image is missing.\n\n"
         "Run pokeldn-gee.exe. The first launch may take a few seconds while Flet\n"
         "unpacks its viewer. Keep the _internal folder beside the exe.\n",
         encoding="utf-8", newline="\r\n")
@@ -190,4 +182,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__)
+        raise SystemExit(0)
     raise SystemExit(main())

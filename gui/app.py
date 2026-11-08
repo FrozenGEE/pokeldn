@@ -179,8 +179,25 @@ class App:
                   "bridge": tr('app.android_bridge_board', 'This board needs a computer'),
                   "permission": tr('app.android_allow_usb', 'Allow USB access'),
                   "denied": tr('app.android_usb_refused', 'USB access was refused')}
+        # The bridge returns English (Setup.java); translate here so the language pack reaches it too.
+        guidance = {
+            "missing": tr('app.android_connect_board',
+                          'Connect an ESP32-S3, C3 or C6 board by its native USB port, or a classic ESP32 with '
+                          'a CP210x USB chip, to the phone with a data cable (some cables only charge). Some '
+                          'phones have a USB host or "OTG" switch. Open Settings and search for "OTG"; turn it '
+                          'on if it is there.'),
+            "bridge": tr('app.android_bridge_guidance',
+                         'This board talks through a USB-to-serial chip the phone app does not drive (it drives '
+                         'the CP210x only). Use this board with the desktop app.'),
+            "permission": tr('app.android_permission_guidance',
+                             'Android asks once whether pokeldn may use the board. Tap Allow USB access, then OK '
+                             "on Android's prompt."),
+            "denied": tr('app.android_denied_guidance',
+                         'Without USB access the app cannot reach the board. Tap Allow USB access and choose OK. '
+                         'Ticking "Always open" skips the question next time.'),
+        }.get(state)
         return BoardStatus("denied" if state in ("permission", "denied") else "missing", titles.get(state, ""),
-                           android.usb_guidance(state))
+                           guidance or android.usb_guidance(state))
 
     def check_board(self, device: str, blink: bool = False, log=None, erase_gift: bool = False) -> None:
         """Ask the board's firmware for its identity in the background; opening the port can restart it."""

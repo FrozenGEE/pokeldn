@@ -27,7 +27,7 @@ from typing import Callable
 from pokeldn import __version__
 from pokeldn.app.paths import DATA
 from pokeldn.app.sprites import _context
-from pokeldn.app import archives
+from pokeldn.app import archives, github_mirror
 
 LATEST = os.environ.get("POKELDN_UPDATE_URL",
                         "https://api.github.com/repos/Decryptu/pokeldn/releases/latest")
@@ -209,6 +209,8 @@ def checksums(text: str) -> dict[str, str]:
 
 
 def _open(url: str, timeout: float = 30.0):
+    url = github_mirror.apply(url)
+
     def allowed(address):
         parts = urllib.parse.urlsplit(address)
         return (parts.scheme == "https" and bool(parts.hostname) and not parts.username and not parts.password

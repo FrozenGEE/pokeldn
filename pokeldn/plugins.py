@@ -7,6 +7,7 @@ Plugins run with the program's full access; none is loaded unless enabled. docs/
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -284,22 +285,77 @@ def folder() -> Path:
     return DATA / "plugins"
 
 
+def _version(text) -> tuple[int, ...]:
+    """The leading numbers of a plugin version, as plugin_store compares them."""
+    parts = re.findall(r"\d+", str(text or ""))[:4]
+    return tuple(int(n) for n in parts) if all(len(n) <= 9 for n in parts) else ()
+
+
+def _bundled_version(folder: Path) -> tuple[int, ...]:
+    try:
+        meta = tomllib.loads((folder / "plugin.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, ValueError):
+        return ()
+    return _version(meta.get("version", ""))
+
+
+def _folder_digest(folder: Path) -> str:
+    """SHA-256 over the bundled files, so a same-version string patch still refreshes an install."""
+    digest = hashlib.sha256()
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file() or path.name == ".installed.json":
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return ""
+        digest.update(path.relative_to(folder).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(data)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def seed_bundled() -> None:
-    """Install the language pack shipped in src/plugins once, without replacing a player's copy."""
+    """Install the plugins shipped in src/plugins. A newer bundled copy replaces an older installed
+    one, and a same-version copy is refreshed when its files changed (the GEE language-pack
+    patches); a newer copy the player installed is kept."""
     from pokeldn.app.paths import ROOT
     bundled = Path(ROOT) / "src" / "plugins"
     if not bundled.is_dir():
         return
     target = folder()
     target.mkdir(parents=True, exist_ok=True)
+    marker_path = target / ".bundled.json"
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, dict):
+            marker = {}
+    except (OSError, ValueError):
+        marker = {}
+    changed = False
     for source in bundled.iterdir():
-        if source.is_dir() and (source / "plugin.toml").is_file():
-            dest = target / source.name
-            if not dest.exists():
-                try:
-                    shutil.copytree(source, dest)
-                except OSError:
-                    pass
+        if not (source.is_dir() and (source / "plugin.toml").is_file()):
+            continue
+        dest = target / source.name
+        digest = _folder_digest(source)
+        new, old = _bundled_version(source), _bundled_version(dest)
+        refresh = (not dest.exists() or new > old
+                   or (new == old and digest and marker.get(source.name) != digest))
+        if not refresh:
+            continue
+        try:
+            shutil.copytree(source, dest, dirs_exist_ok=True)
+        except OSError:
+            continue
+        if digest:
+            marker[source.name] = digest
+            changed = True
+    if changed:
+        try:
+            marker_path.write_text(json.dumps(marker, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
 
 def data_folder(plugin_id: str) -> Path:
@@ -313,8 +369,8 @@ def enabled() -> list[str]:
     try:
         data = json.loads((DATA / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        # A fresh install has no settings file: the bundled Simplified Chinese pack is on by default.
-        return ["community-zh-hans"] if (folder() / "community-zh-hans").is_dir() else []
+        # A fresh install has no settings file: English, with no plugin turned on until chosen.
+        return []
     ids = data.get("plugins", []) if isinstance(data, dict) else []
     return [i for i in ids if isinstance(i, str)]
 

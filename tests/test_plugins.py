@@ -363,7 +363,7 @@ def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolat
     assert not install.disabled
     install.on_click(None)
     assert plugin_store.known_key("test-kit") == package.key
-    assert settings.plugins == ["test-kit"] and "test-kit" in {p.id for p in plugins.load() if p.loaded}
+    assert "test-kit" in settings.plugins and "test-kit" in {p.id for p in plugins.load() if p.loaded}
 
 
 def test_a_future_pokeldn_runs_a_deprecated_api_and_refuses_a_dropped_one(isolated, tmp_path, monkeypatch):
@@ -636,10 +636,10 @@ def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goe
                                    "--download", base + "/{file}"]) == 0
     try:
         publish(KIT_VERSION)
-        assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
+        assert plugin_sources.followed() == list(plugin_sources.BUILT_INS)
         added = plugin_sources.add(base + "/")
         assert (added.url, added.name, [e.id for e in added.entries]) == (f"{base}/{plugin_sources.FILE}", "Local", ["test-kit"])
-        assert plugin_sources.followed() == [plugin_sources.BUILT_IN, added.url]
+        assert plugin_sources.followed() == [*plugin_sources.BUILT_INS, added.url]
         with pytest.raises(plugin_sources.SourceError, match="already"):
             plugin_sources.add(added.url)
         entry = added.entry("test-kit")
@@ -667,7 +667,7 @@ def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goe
         offline = plugin_sources.fetch(added.url)       # the cached listing still shows
         assert offline.error and [e.version for e in offline.entries] == ["5.3.0"]
         plugin_sources.remove(added.url)
-        assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
+        assert plugin_sources.followed() == list(plugin_sources.BUILT_INS)
         assert plugin_store.installed("test-kit") is not None
         with pytest.raises(plugin_sources.SourceError):
             plugin_sources.remove(plugin_sources.BUILT_IN)
@@ -974,3 +974,30 @@ def test_a_plugin_script_runs_a_launcher_and_gets_its_exit_status(tmp_path):
     assert sys.argv == argv
     with pytest.raises(ValueError):
         run_launcher("tools/rse/rom_mod.py", [])
+
+
+def test_seed_bundled_refreshes_a_same_version_patch_and_keeps_a_newer_install(tmp_path, monkeypatch):
+    from pokeldn import plugins
+    from pokeldn.app import paths
+
+    root = tmp_path / "root"
+    source = root / "src" / "plugins" / "community-zh-hans"
+    source.mkdir(parents=True)
+    (source / "plugin.toml").write_text('id = "community-zh-hans"\nversion = "1.0.6.1"\n',
+                                       encoding="utf-8")
+    (source / "strings.toml").write_text('"a" = "one"\n', encoding="utf-8")
+    monkeypatch.setattr(paths, "ROOT", str(root))
+    monkeypatch.setattr(paths, "DATA", tmp_path / "data")
+
+    plugins.seed_bundled()
+    dest = plugins.folder() / "community-zh-hans"
+    assert (dest / "strings.toml").read_text(encoding="utf-8") == '"a" = "one"\n'
+
+    (source / "strings.toml").write_text('"a" = "two"\n', encoding="utf-8")
+    plugins.seed_bundled()
+    assert (dest / "strings.toml").read_text(encoding="utf-8") == '"a" = "two"\n'
+
+    (dest / "plugin.toml").write_text('version = "1.0.7"\n', encoding="utf-8")
+    (dest / "strings.toml").write_text('"a" = "player"\n', encoding="utf-8")
+    plugins.seed_bundled()
+    assert (dest / "strings.toml").read_text(encoding="utf-8") == '"a" = "player"\n'

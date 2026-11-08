@@ -398,6 +398,16 @@ Choosing a pack turns it on and needs a restart. A missing key uses its inline E
 Placeholders like `{value0}` may move but keep their names and specs; `{{` and `}}` are literal braces;
 a translation that fails to format uses English.
 
+This fork does not bundle a language pack. The community Simplified Chinese
+(`community-zh-hans`) and Traditional Chinese (`community-zh-hant`) packs are installed from the
+plugin source `ZsyzLahz/pokeldn-zh-hans` (Plugins, Sources). Keys added by this fork fall back to
+their English defaults until the installed pack translates them. A fresh install stays in English
+with no plugin turned on; a pack is chosen in Settings, App language.
+
+`plugins.seed_bundled` still installs any pack placed in `src/plugins` at launch and replaces an
+older installed copy; a same-version copy is refreshed when its files change (a SHA-256 marker in
+`plugins/.bundled.json`), while a newer copy the player installed is kept.
+
 ```bash
 python scripts/extract_strings.py [--check]     # writes pokeldn/app/data/strings.en.toml
 python scripts/pack_plugin.py examples/plugins/pseudo -o pseudo.pokeplugin

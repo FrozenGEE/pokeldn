@@ -252,7 +252,7 @@ def offer(entry: Entry, game: str, trainer: dict) -> dict:
     and legal there, or BuilderError with the reason. `trainer` is the bank's owner, who handles it."""
     from pokeldn.pokemon import SERVICE, summary
     reply = SERVICE.move(entry.game, game, data(entry), entry.tracker, trainer)
-    return {"file": SERVICE.keep(game, reply), "summary": summary(reply), "species": reply["species_id"],
+    return {"file": SERVICE.keep(game, reply, "trade"), "summary": summary(reply), "species": reply["species_id"],
             "shiny": reply["shiny"], "legal": reply["legal"], "encounter": reply["encounter"],
             "moves": reply["moves"], "report": "", "home_tracker": reply["home_tracker"], "bank": entry.id}
 

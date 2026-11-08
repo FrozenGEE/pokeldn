@@ -1,14 +1,17 @@
 import copy
 import os
+import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
 import flet as ft
 
 from gui import theme as t
 from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
-from pokeldn.app import build_info
+from pokeldn.app import backup, github_mirror, restore
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE, ITEMS, RIBBONS
 from pokeldn.app.settings import GEN3, VERSION_GAME, switch_ids_valid
@@ -61,6 +64,15 @@ class SettingsView:
         self.clear_button = t.button(tr('settings.clear_local_files_2f0392', 'Clear local files'), self._clear_local, "folder", filled=False,
                                      disabled=True)
         self.shown = self.asked = False
+        self.mirror_work = False
+        self.backup_work = False
+        self.restore_work = False
+        self.webdav_work = False
+        self.backup_button = None
+        self.backup_state = None
+        self.webdav_dot = None
+        self.webdav_text = None
+        self.webdav_state = None
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
@@ -96,6 +108,22 @@ class SettingsView:
                            f"{s.tx_power:g}", on_select=lambda e: self.save("tx_power", float(e.control.value)))
 
         trainer = self._trainer()
+        mirror_choices = [("", tr('settings.direct_connection', 'Direct (default)'))] + \
+                         [(prefix, name) for prefix, name in github_mirror.MIRRORS if prefix]
+        self.mirror_dropdown = t.dropdown(
+            mirror_choices,
+            s.github_mirror if any(s.github_mirror == prefix for prefix, _ in github_mirror.MIRRORS) else "",
+            on_select=self._mirror_selected)
+        self.mirror_dot = ft.Container(width=10, height=10, border_radius=5, bgcolor=t.FAINT)
+        self.mirror_text = t.text(tr('settings.not_tested', 'Not tested'), 12, t.MUTED)
+        self.mirror_state = ft.Row([self.mirror_dot, self.mirror_text], spacing=6,
+                                   vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        # The label and the test result share the first line; the dropdown runs the card's full width.
+        mirror_body = ft.Column([
+            ft.Row([t.text(tr('settings.accelerator_source', 'Accelerator'), 11, t.MUTED, expand=True), self.mirror_state],
+                   spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Row([self.mirror_dropdown], spacing=0),
+        ], spacing=4)
 
         def switch(name, label, help_):
             return t.card(label, None, help_,
@@ -103,12 +131,6 @@ class SettingsView:
 
         def link(label, url):
             return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
-
-        def version_row(label, value, link_label="", url=""):
-            shown = [t.text(value, 13)]
-            if link_label:
-                shown.append(link(f"({link_label})", url))
-            return ft.Row([t.text(label, 12, t.MUTED, width=150), ft.Row(shown, spacing=6)], spacing=8)
 
         def section(label):
             return ft.Container(t.text(label, 12, t.MUTED, weight=ft.FontWeight.W_600),
@@ -164,6 +186,7 @@ class SettingsView:
                 self.storage_result,
             ], spacing=8),
                    tr('settings.free_space_used_by_session_records_logs_temporary_offer_f7ffba', 'Free space used by session records, logs, temporary offers and unused built Pokemon. Your received Pokemon, selected offers, keys, firmware and settings are kept.')),
+            self._backup_card(s),
             section(tr('settings.bug_reports_aa0e58', 'Bug reports')),
             t.card(tr('settings.record_every_session_f5f9d8', 'Record every session'), ft.Row([t.button(tr('settings.open_the_records_6fade1', 'Open the records'), lambda e: open_folder(
                 str(SESSION / "captures")), "folder", filled=False)]),
@@ -174,24 +197,14 @@ class SettingsView:
             ft.Row([t.link_button(tr('settings.hide_advanced_settings_82557c', 'Hide advanced settings') if self.show_advanced else tr('settings.show_advanced_settings_c0d5bf', 'Show advanced settings'),
                                   self._toggle_advanced)]),
             *(advanced if self.show_advanced else []),
+            t.card(tr('settings.github_accelerator', 'GitHub accelerator'), mirror_body,
+                   tr('settings.github_accelerator_help', 'Some networks cannot reach GitHub directly. After choosing an accelerator, the dot shows the test result: green for low latency, amber for high, red when unreachable. GitHub downloads, update checks and plugin sources use it. Accelerators are third-party services and see the download address; updates and plugin packages are still checked with SHA-256.')),
             t.card(tr('settings.updates_22e2ba', 'Updates'), ft.Row([t.button(tr('settings.check_now_2937cf', 'Check now'), self._check_update, "refresh", filled=False),
                                       self.update_state], spacing=10),
                    tr('settings.asks_github_for_a_newer_pokeldn_when_the_app_starts_and_b07880', "Asks GitHub for a newer pokeldn when the app starts, and each installed plugin's own address for a newer version of it. Nothing about you or your games is sent."),
                    trailing=t.switch(s.check_updates, lambda e: self.save("check_updates", e.control.value))),
-            t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Column([
-                ft.Row([link(label, url) for label, url in LINKS], spacing=4),
-                ft.Divider(height=1, color=ft.Colors.with_opacity(0.08, "#FFFFFF")),
-                *[version_row(label, value, link_label, url)
-                  for label, value, link_label, url in (
-                      (tr('settings.pokeldn_version', 'pokeldn version'), __version__, "", ""),
-                      (tr('settings.firmware_version', 'ESP32 firmware'), build_info.firmware_version(), "", ""),
-                      (tr('settings.gee_build', 'GEE build'), build_info.GEE_BUILD,
-                       build_info.GEE_REPO_LABEL, build_info.GEE_REPO),
-                      (tr('settings.language_pack_version', 'Language pack'), build_info.LANGUAGE_VERSION,
-                       build_info.LANGUAGE_REPO_LABEL, build_info.LANGUAGE_REPO),
-                      (tr('settings.build_date', 'Build date'), build_info.BUILD_DATE, "", ""),
-                  )],
-            ], spacing=6),
+            t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__),
+                   ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    tr('settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838', 'pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3).')),
         ]
 
@@ -311,6 +324,39 @@ class SettingsView:
         self.render()
         self.control.update()
 
+    def _mirror_selected(self, e) -> None:
+        """Applies the picked accelerator at once and measures its answer to a small GitHub file."""
+        prefix = e.control.value or ""
+        self.save("github_mirror", prefix)
+        github_mirror.select(prefix)
+        if self.mirror_work:
+            return
+        self.mirror_work = True
+        self._mirror_shown("testing", 0)
+        threading.Thread(target=self._probe_mirror, args=(prefix,), daemon=True).start()
+
+    def _probe_mirror(self, prefix: str) -> None:
+        status, milliseconds = github_mirror.probe(prefix)
+        self._mirror_shown(status, milliseconds)
+
+    def _mirror_shown(self, status: str, milliseconds: int) -> None:
+        if status == "testing":
+            color, message = t.FAINT, tr('settings.testing', 'Testing...')
+        elif status == "fail":
+            color, message = t.RED, tr('settings.mirror_unreachable', 'Unreachable')
+        else:
+            color = t.GREEN if status == "ok" else t.AMBER
+            message = tr('settings.mirror_latency', '{value0} ms', value0=milliseconds)
+        self.mirror_dot.bgcolor = color
+        self.mirror_dot.shadow = ft.BoxShadow(blur_radius=8, spread_radius=2,
+                                              color=ft.Colors.with_opacity(0.7, color))
+        self.mirror_text.value = message
+        self.mirror_text.color = color
+        if status != "testing":
+            self.mirror_work = False
+        if self.shown:
+            self.mirror_state.update()
+
     def _check_update(self, e) -> None:
         self.asked = True
         self.app.check_update()
@@ -416,6 +462,519 @@ class SettingsView:
                 tr('settings.remove_files_and_free_about_this_deletes_saved_session__3f93fe', 'Remove {value0} files and free about {value1}. This deletes saved session records, logs, temporary offers and unused built Pokemon. Save any records needed for a bug report first. Your received Pokemon, selected offers, keys, firmware and settings are kept.', value0=len(inventory.files), value1=storage.size_text(inventory.size)), 13, t.MUTED), width=460),
             actions=[t.secondary_button(tr('settings.cancel_19766e', 'Cancel'), close), t.button(tr('settings.clear_files_a16c81', 'Clear files'), clear)],
         ))
+
+    def _backup_card(self, s) -> ft.Control:
+        """The zip's destination: a folder on this computer, or a WebDAV folder with its account."""
+        mode = s.backup_mode if s.backup_mode in ("local", "webdav") else "local"
+        body: list[ft.Control] = [
+            t.choice_row(tr('settings.backup_destination', 'Back up to'),
+                         [("local", tr('settings.backup_local', 'This computer'), "folder"),
+                          ("webdav", tr('settings.backup_webdav', 'WebDAV'), "globe")],
+                         mode, self._backup_mode),
+        ]
+        if mode == "local":
+            folder = PathField(self.app.picker, lambda: os.path.expanduser("~"), s.backup_dir, "dir",
+                               on_change=lambda value: self.save("backup_dir", value))
+            body.append(ft.Column([
+                t.text(tr('settings.backup_folder', 'Save to'), 11, t.MUTED),
+                ft.Row([ft.Container(folder.control, expand=True),
+                        t.icon_button("external-link", self._open_backup_folder,
+                                      tr('settings.backup_open_folder', 'Open the folder'))],
+                       spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                t.text(tr('settings.backup_folder_help',
+                          'The backup is written to pokeldn-backup.zip; backing up again replaces that file.'), 12, t.MUTED),
+            ], spacing=6, tight=True))
+        else:
+            url = t.field(value=s.webdav_url, hint="https://example.com/remote.php/dav/files/me/pokeldn/",
+                          on_change=lambda e: self.save("webdav_url", e.control.value.strip()))
+            account = t.field(value=s.webdav_user,
+                              on_change=lambda e: self.save("webdav_user", e.control.value.strip()))
+            # The reveal button's 48-unit icon box makes this field taller than the others; a fixed
+            # height matches the account and address fields (gui/theme.py, field).
+            password = t.field(value=s.webdav_password, password=True, can_reveal_password=True,
+                               height=t.CONTROL_HEIGHT,
+                               on_change=lambda e: self.save("webdav_password", e.control.value))
+            self.webdav_dot = ft.Container(width=10, height=10, border_radius=5, bgcolor=t.FAINT)
+            self.webdav_text = t.text(tr('settings.not_tested', 'Not tested'), 12, t.MUTED)
+            self.webdav_state = ft.Row([self.webdav_dot, self.webdav_text], spacing=6,
+                                       vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            body.extend([
+                ft.Column([
+                    t.labeled_control(tr('settings.backup_url', 'Address'), url),
+                    ft.Row([t.labeled_control(tr('settings.backup_account', 'Account'), account, expand=True),
+                            t.labeled_control(tr('settings.backup_password', 'Password'), password, expand=True)],
+                           spacing=10),
+                ], spacing=8),
+                ft.Row([t.button(tr('settings.backup_test', 'Save and test'), self._webdav_test, "wifi",
+                                 filled=False), self.webdav_state],
+                       spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                t.text(tr('settings.backup_webdav_help',
+                          'The address, account and password are kept only in this computer\'s settings; the '
+                          'password is left out of the backup itself. The folder must already exist on the server.'),
+                       12, t.MUTED),
+            ])
+        key_help = tr('settings.backup_keys_help', 'Adds prod.keys to the backup.')
+        body.append(ft.Row([
+            ft.Column([t.text(tr('settings.backup_keys', 'Include prod.keys'), 13),
+                       t.text(key_help, 12, t.AMBER if s.backup_keys and mode == "webdav" else t.MUTED)],
+                      spacing=2, expand=True),
+            t.switch(s.backup_keys, lambda e: self.save("backup_keys", e.control.value)),
+        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+        self.backup_state = t.text("", 12, t.MUTED)
+        self.sync_down_button = None
+        self.restore_button = None
+        if mode == "webdav":
+            sync_up = t.button(tr('settings.sync_up', 'Local to cloud'), self._sync_up, "upload")
+            self.sync_down_button = t.button(tr('settings.sync_down', 'Cloud to local'),
+                                             self._sync_down, "download", filled=False)
+            self.backup_button = sync_up
+            body.append(ft.Row([sync_up, self.sync_down_button], spacing=8,
+                               vertical_alignment=ft.CrossAxisAlignment.CENTER))
+            body.append(self.backup_state)
+            body.append(t.text(tr('settings.sync_help',
+                                  'One pokeldn-backup.zip is kept in the cloud. Local to cloud replaces '
+                                  'the cloud copy; cloud to local replaces this computer.'), 12, t.MUTED))
+        else:
+            self.backup_button = t.button(tr('settings.backup_now', 'Back up now'), self._backup_now, "save")
+            self.restore_button = t.button(tr('settings.restore_from_file', 'Restore from file...'),
+                                           self._restore_file, "upload", filled=False)
+            body.append(ft.Row([self.backup_button, self.restore_button], spacing=8,
+                               vertical_alignment=ft.CrossAxisAlignment.CENTER))
+            body.append(self.backup_state)
+            body.append(t.text(tr('settings.restore_file_help', 'A restore replaces the data in the app.'),
+                               12, t.MUTED))
+        return t.card(tr('settings.backup_title', 'Backup and restore'), ft.Column(body, spacing=12),
+                      tr('settings.backup_help',
+                         'Packs the settings, installed plugins and every Pokemon file into one zip, sorted into '
+                         'folders. prod.keys is added only when its switch is on.'))
+
+    def _backup_mode(self, value: str) -> None:
+        self.save("backup_mode", value)
+        self.render()
+        self.column.update()
+
+    def _open_backup_folder(self, e) -> None:
+        folder = self.app.settings.backup_dir.strip() or os.path.expanduser("~")
+        open_folder(os.path.expanduser(folder))
+
+    def _webdav_test(self, e) -> None:
+        """Saves what is typed (each field saves as it changes) and asks the folder who may read it."""
+        if self.webdav_work:
+            return
+        s = self.app.settings
+        try:
+            backup.normalize(s.webdav_url)
+        except ValueError:
+            self._webdav_shown("invalid")
+            return
+        self.webdav_work = True
+        self._webdav_shown("testing")
+        threading.Thread(target=self._probe_webdav, args=(s.webdav_url, s.webdav_user, s.webdav_password),
+                         daemon=True).start()
+
+    def _probe_webdav(self, url: str, user: str, password: str) -> None:
+        kind = backup.probe(url, user, password)
+        self.app.ui(lambda: self._webdav_shown(kind))
+
+    def _webdav_shown(self, kind: str, detail: str = "") -> None:
+        mapping = {
+            "testing": (t.FAINT, tr('settings.testing', 'Testing...')),
+            "ok": (t.GREEN, tr('settings.backup_connected', 'Connected')),
+            "auth": (t.RED, tr('settings.backup_auth_failed', 'The account or password is wrong')),
+            "missing": (t.AMBER, tr('settings.backup_address_missing', 'Folder not found')),
+            "denied": (t.RED, tr('settings.backup_denied', 'No write permission')),
+            "invalid": (t.RED, tr('settings.backup_url_invalid', 'The address must start with http:// or https://')),
+            "space": (t.RED, tr('settings.backup_no_space', 'The server is out of space')),
+            "server": (t.RED, tr('settings.backup_server_error', 'The server returned {value0}', value0=detail or "?")),
+        }
+        color, message = mapping.get(kind, (t.RED, tr('settings.mirror_unreachable', 'Unreachable')))
+        if kind != "testing":
+            self.webdav_work = False
+        if self.webdav_dot is None:
+            return
+        self.webdav_dot.bgcolor = color
+        self.webdav_dot.shadow = ft.BoxShadow(blur_radius=8, spread_radius=2,
+                                              color=ft.Colors.with_opacity(0.7, color))
+        self.webdav_text.value, self.webdav_text.color = message, color
+        if self.shown:
+            try:
+                self.webdav_state.update()
+            except RuntimeError:     # the card was rebuilt meanwhile
+                pass
+
+    def _backup_now(self, e) -> None:
+        if self.backup_work or self.restore_work:
+            return
+        if self.app.busy:
+            self._backup_status(tr('settings.backup_busy', 'Finish the current run or board check first.'), t.AMBER)
+            return
+        settings = copy.deepcopy(self.app.settings)
+        if not settings.backup_dir.strip():
+            self._backup_status(tr('settings.backup_folder_missing', 'Choose a folder for the backup.'), t.AMBER)
+            return
+        target = os.path.join(os.path.expanduser(settings.backup_dir), backup.SINGLE)
+        self._confirm_overwrite(
+            tr('settings.backup_confirm_title', 'Back up to this computer?'),
+            [tr('settings.backup_confirm_body', 'This replaces the old backup with the data on this computer: {value0}', value0=target)],
+            lambda: self._backup_start(settings))
+
+    def _backup_start(self, settings) -> None:
+        self.backup_work = True
+        self._set_working(True)
+        self._backup_status(tr('settings.backup_packing', 'Packing...'), t.MUTED)
+
+        def work():
+            result = None
+            outcome: tuple = ("error", "plain", "")
+            try:
+                result = backup.create(include_keys=settings.backup_keys, keys_path=settings.keys)
+                target = backup.save_local(result.path, settings.backup_dir,
+                                           name=backup.SINGLE, replace=True)
+                outcome = ("saved", result.files, result.bytes, str(target))
+            except (OSError, ValueError) as error:
+                outcome = ("error", "plain", str(error) or type(error).__name__)
+            finally:
+                if result is not None:
+                    result.discard()
+                self.app.ui(lambda: self._backup_done(outcome))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _set_working(self, working: bool) -> None:
+        for button in (getattr(self, "backup_button", None), getattr(self, "sync_down_button", None),
+                       getattr(self, "restore_button", None)):
+            if button is None:
+                continue
+            button.disabled = working
+            if self.shown:
+                try:
+                    button.update()
+                except RuntimeError:
+                    pass
+
+    def _confirm_overwrite(self, title: str, lines: list[str], action) -> None:
+        """A yes/no screen with an I-understand tick: the confirm button stays off until it is ticked."""
+        confirm = t.button(tr('settings.confirm_action', 'Confirm'), None, "check", disabled=True)
+
+        def flip(e):
+            confirm.disabled = not bool(tick.value)
+            confirm.update()
+
+        tick = ft.Checkbox(label=tr('settings.confirm_understood', 'I understand; overwrite'), value=False,
+                           on_change=flip, fill_color=t.BLUE, check_color=t.BG,
+                           label_style=ft.TextStyle(size=12, color=t.MUTED))
+
+        def close(e):
+            self.app.page.pop_dialog()
+
+        def go(e):
+            self.app.page.pop_dialog()
+            action()
+
+        confirm.on_click = go
+        self.app.page.show_dialog(t.dialog(
+            semantics_label=title,
+            title=t.text(title, 17, weight=ft.FontWeight.W_600),
+            content=ft.Container(ft.Column([*(t.text(line, 13, t.MUTED) for line in lines), tick],
+                                           spacing=10, tight=True), width=480),
+            actions=[t.secondary_button(tr('settings.cancel_19766e', 'Cancel'), close), confirm]))
+        self.app.page.update()
+
+    def _sync_up(self, e) -> None:
+        """Local wins: pack this computer and replace the one zip on WebDAV."""
+        if self.backup_work or self.restore_work:
+            return
+        if self.app.busy:
+            self._backup_status(tr('settings.backup_busy', 'Finish the current run or board check first.'), t.AMBER)
+            return
+        settings = copy.deepcopy(self.app.settings)
+        if not self._webdav_ready(settings):
+            return
+        self._confirm_overwrite(
+            tr('settings.sync_confirm_title', 'Sync to the cloud?'),
+            [tr('settings.sync_confirm_body', 'This replaces {value0} in the cloud with the data on this computer.', value0=backup.SINGLE)],
+            lambda: self._sync_up_start(settings))
+
+    def _sync_up_start(self, settings) -> None:
+        self.backup_work = True
+        self._set_working(True)
+        self._backup_status(tr('settings.sync_uploading', 'Packing and uploading...'), t.MUTED)
+
+        def work():
+            result = None
+            outcome: tuple = ("error", "plain", "")
+            try:
+                result = backup.create(include_keys=settings.backup_keys, keys_path=settings.keys)
+                target = backup.upload(result.path, settings.webdav_url, settings.webdav_user,
+                                       settings.webdav_password, name=backup.SINGLE)
+                outcome = ("uploaded", result.files, result.bytes, target)
+            except backup.WebDAVError as error:
+                outcome = ("error", error.kind, error.detail)
+            except (OSError, ValueError) as error:
+                outcome = ("error", "plain", str(error) or type(error).__name__)
+            finally:
+                if result is not None:
+                    result.discard()
+                self.app.ui(lambda: self._backup_done(outcome))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _webdav_ready(self, settings) -> bool:
+        try:
+            backup.normalize(settings.webdav_url)
+        except ValueError:
+            self._backup_status(tr('settings.backup_url_invalid',
+                                   'The address must start with http:// or https://'), t.RED)
+            return False
+        if not settings.webdav_user.strip():
+            self._backup_status(tr('settings.backup_account_missing', 'Enter the WebDAV account.'), t.AMBER)
+            return False
+        return True
+
+    def _sync_down(self, e) -> None:
+        """Cloud wins: download the one zip and restore it over this computer."""
+        if self.backup_work or self.restore_work:
+            return
+        if self.app.busy:
+            self._backup_status(tr('settings.backup_busy', 'Finish the current run or board check first.'), t.AMBER)
+            return
+        settings = copy.deepcopy(self.app.settings)
+        if not self._webdav_ready(settings):
+            return
+        self.restore_work = True
+        self._set_working(True)
+        self._backup_status(tr('settings.sync_downloading', 'Downloading the cloud backup...'), t.MUTED)
+        url, user, password = settings.webdav_url, settings.webdav_user, settings.webdav_password
+
+        def work():
+            try:
+                try:
+                    path = backup.download(backup.SINGLE, url, user, password)
+                except backup.WebDAVError as error:
+                    if error.kind != "missing":
+                        raise
+                    # Backups from before the single-file sync keep their old names.
+                    items = backup.list_backups(url, user, password)
+                    if not items:
+                        raise backup.WebDAVError("empty", backup.SINGLE) from error
+                    path = backup.download(items[0]["name"], url, user, password)
+            except backup.WebDAVError as error:
+                message = (tr('settings.sync_no_cloud',
+                              'No backup file in the cloud. Run Local to cloud first.') if error.kind in ("missing", "empty")
+                           else self._webdav_message(error.kind, error.detail))
+                self.app.ui(lambda: self._restore_failed(message, None))
+                return
+            except OSError as error:
+                message = str(error) or type(error).__name__
+                self.app.ui(lambda: self._restore_failed(message, None))
+                return
+            self.app.ui(lambda: self._begin_restore(path, temporary=path))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _backup_status(self, message: str, color: str) -> None:
+        if self.backup_state is None:
+            return
+        self.backup_state.value, self.backup_state.color = message, color
+        if self.shown:
+            try:
+                self.backup_state.update()
+            except RuntimeError:
+                pass
+
+    def _backup_done(self, outcome: tuple) -> None:
+        self.backup_work = False
+        self._set_working(False)
+        kind = outcome[0]
+        if kind == "saved":
+            _, files, size, target = outcome
+            message = tr('settings.backup_saved', 'Backed up {value0} files ({value1}) to {value2}',
+                         value0=files, value1=storage.size_text(size), value2=target)
+            color = t.GREEN
+        elif kind == "uploaded":
+            _, files, size, target = outcome
+            message = tr('settings.backup_uploaded', 'Uploaded {value0} files ({value1}) to {value2}',
+                         value0=files, value1=storage.size_text(size), value2=target)
+            color = t.GREEN
+        else:
+            code, detail = (outcome[1], outcome[2] if len(outcome) > 2 else "")
+            color = t.RED
+            message = {
+                "auth": tr('settings.backup_auth_failed', 'The account or password is wrong'),
+                "missing": tr('settings.backup_address_missing', 'Folder not found'),
+                "denied": tr('settings.backup_denied', 'No write permission'),
+                "space": tr('settings.backup_no_space', 'The server is out of space'),
+                "network": tr('settings.mirror_unreachable', 'Unreachable'),
+                "server": tr('settings.backup_server_error', 'The server returned {value0}', value0=detail or "?"),
+            }.get(code, tr('settings.backup_failed', 'The backup did not finish: {value0}', value0=detail or code))
+        self._backup_status(message, color)
+
+    async def _restore_file(self, e) -> None:
+        if self.restore_work or self.backup_work:
+            return
+        if self.app.busy:
+            self._backup_status(tr('settings.backup_busy', 'Finish the current run or board check first.'), t.AMBER)
+            return
+        files = await self.app.picker.pick_files(
+            dialog_title=tr('settings.restore_choose_file', 'Choose a pokeldn backup zip'),
+            allowed_extensions=["zip"], file_type=ft.FilePickerFileType.CUSTOM)
+        if files and files[0].path:
+            self._begin_restore(Path(files[0].path))
+
+    def _begin_restore(self, path: Path, temporary: Path | None = None) -> None:
+        if self.backup_work:
+            return
+        if not self.restore_work:
+            if self.app.busy:
+                self._backup_status(tr('settings.backup_busy', 'Finish the current run or board check first.'), t.AMBER)
+                return
+            self.restore_work = True
+        self._set_working(True)
+        self._backup_status(tr('settings.restore_inspecting', 'Reading the backup...'), t.MUTED)
+
+        def work():
+            try:
+                info = restore.inspect(path)
+            except (restore.RestoreError, OSError) as error:
+                message = str(error) or type(error).__name__
+                self.app.ui(lambda: self._restore_failed(message, temporary))
+                return
+            self.app.ui(lambda: self._confirm_restore(path, info, temporary))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _confirm_restore(self, path: Path, info: restore.Backup, temporary: Path | None) -> None:
+        categories = ", ".join(f"{key} {value}" for key, value in sorted(info.categories.items()))
+        lines = [
+            t.text(tr('settings.restore_time', 'Backup time: {value0}', value0=info.created or "?"), 13),
+            t.text(tr('settings.restore_files', '{value0} files ({value1})',
+                      value0=info.files, value1=storage.size_text(info.bytes)), 13, t.MUTED),
+            t.text(tr('settings.restore_categories', 'Categories: {value0}', value0=categories or "-"), 12, t.MUTED),
+            t.text(tr('settings.restore_file_detail', 'A restore replaces the data in the app.'),
+                   13, t.MUTED),
+        ]
+        if info.has_keys:
+            lines.append(t.text(tr('settings.restore_keys_cloud',
+                                   'The backup contains prod.keys; it is written to the key path this computer uses.'), 12, t.AMBER))
+        lines.append(t.text(tr('settings.restore_warning', 'Restart pokeldn after the restore.'), 12, t.MUTED))
+        start_button = t.button(tr('settings.restore_start', 'Start restore'), None, "upload", disabled=True)
+
+        def flip(e):
+            start_button.disabled = not bool(tick.value)
+            start_button.update()
+
+        tick = ft.Checkbox(label=tr('settings.confirm_understood', 'I understand; overwrite'), value=False,
+                           on_change=flip, fill_color=t.BLUE, check_color=t.BG,
+                           label_style=ft.TextStyle(size=12, color=t.MUTED))
+
+        def close(e):
+            self.app.page.pop_dialog()
+            self.restore_work = False
+            self._set_working(False)
+            if temporary:
+                temporary.unlink(missing_ok=True)
+
+        def start(e):
+            self.app.page.pop_dialog()
+            self._start_restore(path, info, "cloud", temporary)
+
+        start_button.on_click = start
+        self.app.page.show_dialog(t.dialog(
+            semantics_label=tr('settings.restore_confirm_title', 'Restore this backup?'),
+            title=t.text(tr('settings.restore_confirm_title', 'Restore this backup?'), 17, weight=ft.FontWeight.W_600),
+            content=ft.Container(ft.Column([*lines, tick], spacing=10, tight=True), width=500),
+            actions=[t.secondary_button(tr('settings.cancel_19766e', 'Cancel'), close), start_button]))
+        self.app.page.update()
+
+    def _start_restore(self, path: Path, info: restore.Backup, mode: str,
+                       temporary: Path | None) -> None:
+        self._backup_status(tr('settings.restore_working', 'Restoring...'), t.MUTED)
+        settings = copy.deepcopy(self.app.settings)
+
+        def work():
+            try:
+                outcome = restore.apply(path, info, mode, settings)
+            except (restore.RestoreError, OSError, ValueError) as error:
+                message = str(error) or type(error).__name__
+                self.app.ui(lambda: self._restore_failed(message, temporary))
+                return
+            except Exception as error:      # never leave the card stuck on "restoring"
+                message = f"{type(error).__name__}: {error}"
+                self.app.ui(lambda: self._restore_failed(message, temporary))
+                return
+            self.app.ui(lambda: self._restore_done(outcome, temporary))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _restore_failed(self, message: str, temporary: Path | None) -> None:
+        self.restore_work = False
+        self._set_working(False)
+        if temporary:
+            temporary.unlink(missing_ok=True)
+        text = tr('settings.restore_failed', 'The restore did not finish: {value0}', value0=message)
+        self._backup_status(text, t.RED)
+        self.app.page.show_dialog(t.dialog(
+            semantics_label=tr('settings.restore_failed_title', 'The restore did not finish'),
+            title=t.text(tr('settings.restore_failed_title', 'The restore did not finish'), 17, weight=ft.FontWeight.W_600),
+            content=ft.Container(t.text(message, 13, t.MUTED), width=460),
+            actions=[t.secondary_button(tr('settings.close_7d9eb7', 'Close'),
+                                        lambda e: self.app.page.pop_dialog())]))
+        self.app.page.update()
+
+    def _restore_done(self, outcome: restore.Outcome, temporary: Path | None) -> None:
+        self.restore_work = False
+        self._set_working(False)
+        if temporary:
+            temporary.unlink(missing_ok=True)
+        self._backup_status(tr('settings.restore_files_done', 'Restored {value0} files.',
+                               value0=outcome.files), t.GREEN)
+        lines = [t.text(tr('settings.restore_files_done', 'Restored {value0} files.',
+                           value0=outcome.files), 13, t.MUTED)]
+        if outcome.settings:
+            lines.append(t.text(tr('settings.restore_settings_staged', 'Settings take effect after a restart.'),
+                                13, t.MUTED))
+        if outcome.keys:
+            lines.append(t.text(tr('settings.restore_keys_written', 'prod.keys was written to {value0}.',
+                                   value0=outcome.keys), 12, t.MUTED))
+        lines.append(t.text(tr('settings.restore_restart_hint', 'Restart pokeldn to load the restored data.'),
+                            13, t.MUTED))
+        desktop = not self.app.page.web and os.environ.get("POKELDN_PLATFORM") not in ("android", "ios")
+        actions = ([t.secondary_button(tr('settings.restore_later', 'Later'),
+                                       lambda e: self.app.page.pop_dialog())])
+        if desktop:
+            actions.append(t.button(tr('settings.restore_restart', 'Restart now'), self._restart_app, "refresh"))
+        self.app.page.show_dialog(t.dialog(
+            semantics_label=tr('settings.restore_done_title', 'Restore complete'),
+            title=t.text(tr('settings.restore_done_title', 'Restore complete'), 17, weight=ft.FontWeight.W_600),
+            content=ft.Container(ft.Column(lines, spacing=6, tight=True), width=500),
+            actions=actions))
+        self.app.page.update()
+
+    def _restart_app(self, e) -> None:
+        self.app.page.pop_dialog()
+        try:
+            args = [sys.executable] + (sys.argv[1:] if getattr(sys, "frozen", False) else sys.argv)
+            subprocess.Popen(args, cwd=os.getcwd())
+        except OSError as error:
+            self._backup_status(tr('settings.restore_failed', 'The restore did not finish: {value0}',
+                                   value0=str(error)), t.RED)
+            return
+
+        async def quit_():
+            await self.app.page.window.destroy()
+        self.app.page.run_task(quit_)
+        threading.Timer(5.0, lambda: os._exit(0)).start()
+
+    def _webdav_message(self, kind: str, detail: str = "") -> str:
+        return {
+            "auth": tr('settings.backup_auth_failed', 'The account or password is wrong'),
+            "missing": tr('settings.backup_address_missing', 'Folder not found'),
+            "denied": tr('settings.backup_denied', 'No write permission'),
+            "space": tr('settings.backup_no_space', 'The server is out of space'),
+            "network": tr('settings.mirror_unreachable', 'Unreachable'),
+            "server": tr('settings.backup_server_error', 'The server returned {value0}', value0=detail or "?"),
+            "invalid": tr('settings.backup_url_invalid', 'The address must start with http:// or https://'),
+        }.get(kind, tr('settings.mirror_unreachable', 'Unreachable'))
 
     def _keys(self, value: str, update: bool = True) -> None:
         self.save("keys", value)

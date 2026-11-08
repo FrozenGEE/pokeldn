@@ -264,7 +264,7 @@ class Service:
             reply = self.check(game, path, {"trainer": trainer} if trainer else None)
         if not reply["legal"] and not self.allow_illegal:
             raise BuilderError(reply["report"])
-        reply["file"] = self.keep(game, reply)
+        reply["file"] = self.keep(game, reply, "imported")
         return reply
 
     def import_records(self, data: bytes, name: str, trainers: dict[str, dict]) -> dict:
@@ -324,7 +324,7 @@ class Service:
             request.update(version=version, only_version=True)
         reply = self._ask(request)
         if keep and not reply["refused"]:
-            reply["file"] = self.keep(game, reply)
+            reply["file"] = self.keep(game, reply, "gift")
         return reply
 
     def save_read(self, data: bytes) -> dict:
@@ -370,15 +370,31 @@ class Service:
             self.proc.stdout.close()
             self.proc = None
 
-    def keep(self, game: str, reply: dict) -> str:
-        """Writes a reply's record where the offer queue keeps built Pokemon; returns the path."""
+    def keep(self, game: str, reply: dict, source: str = "built") -> str:
+        """Writes a reply's record where the offer queue keeps built Pokemon; returns the path. A `.json`
+        beside it records what the builder replied, for the Bank page's Created history."""
         data = base64.b64decode(reply["data"])
         folder = POKEMON / game
         folder.mkdir(parents=True, exist_ok=True)
-        species = reply.get("canonical", {}).get("species", reply["species"])
+        canonical = reply.get("canonical") if isinstance(reply.get("canonical"), dict) else {}
+        species = canonical.get("species", reply["species"])
         name = re.sub(r"[^A-Za-z0-9]+", "", species) or "pokemon"
         path = folder / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}.{EXTENSIONS[game]}"
         path.write_bytes(data)
+        try:
+            meta = {
+                "game": game,
+                "species": species,
+                "species_id": int(canonical.get("species_id") or reply.get("species_id") or 0),
+                "shiny": bool(reply.get("shiny")),
+                "summary": summary({**reply, **canonical}),
+                "legal": reply.get("legal") is not False,
+                "created": time.time(),
+                "source": source,
+            }
+            path.with_suffix(".json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
         return str(path)
 
 

@@ -305,12 +305,22 @@ class BoardView:
                 action.append(t.button(tr('boards.open_control_a27fbe', 'Open Control'), lambda e: self.app.navigate("controller"), "joystick",
                                        filled=not f.update))
         lead = (PixelActivity(tr('boards.working_a92f04', 'Working')) if icon is None else t.pixel_icon(icon, size=18, color=color))
-        status_row = ft.Row([
-            ft.Container(lead, width=20, height=20, alignment=ft.Alignment.CENTER),
-            ft.Column([t.text(title, 14, weight=ft.FontWeight.W_600),
-                       *([t.text(detail, 12, t.MUTED)] if detail else [])], spacing=2, expand=True),
-            *action,
-        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        status_text = ft.Column([t.text(title, 14, weight=ft.FontWeight.W_600),
+                                 *([t.text(detail, 12, t.MUTED)] if detail else [])], spacing=2, expand=True)
+        if t.compact:
+            # A phone is too narrow for a status line and its buttons side by side: the text keeps
+            # the full width and the buttons drop below it (the same rule as the firmware rows).
+            status_row = ft.Column([
+                ft.Row([ft.Container(lead, width=20, height=20, alignment=ft.Alignment.CENTER), status_text],
+                       spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+                *([ft.Row(action, spacing=8, wrap=True)] if action else []),
+            ], spacing=8, tight=True)
+        else:
+            status_row = ft.Row([
+                ft.Container(lead, width=20, height=20, alignment=ft.Alignment.CENTER),
+                status_text,
+                *action,
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         body = [
             ft.Row([
                 t.pixel_icon(f.firmware.icon if f.firmware else "cpu", size=48, color=t.BLUE),
@@ -330,25 +340,33 @@ class BoardView:
         for fw in board.FIRMWARES:
             installed = fw.kind == f.kind and f.state in ("ready", "old")
             fits = not f.chip or f.chip in fw.chips
+            actions: list[ft.Control] = []
             if installed:
-                trailing = t.chip(tr('boards.installed_b9a401', 'Installed · {value0}', value0=f.version) if f.version else tr('boards.installed_f8b32f', 'Installed'), "check", t.GREEN)
-                # An installed firmware can be flashed again. On an ESP32-S3 the Wireless row
-                # uses the GEE image; the Bluetooth wireless and Controller rows use theirs.
+                actions.append(t.chip(tr('boards.installed_b9a401', 'Installed · {value0}', value0=f.version) if f.version else tr('boards.installed_f8b32f', 'Installed'), "check", t.GREEN))
+                # An installed firmware can be flashed again; each row uses the released image
+                # for its chip.
                 if fits and self.available(fw):
-                    trailing = ft.Row([trailing, t.secondary_button(
+                    actions.append(t.secondary_button(
                         tr('boards.reinstall', 'Reinstall'), lambda e, w=fw: self.confirm(w), "download",
-                        disabled=busy or not self.available(fw))], spacing=8)
+                        disabled=busy or not self.available(fw)))
             elif not fits:
-                trailing = t.text(tr('boards.not_available_on_40a206', 'Not available on {value0}', value0=f.chip), 12, t.FAINT)
+                actions.append(t.text(tr('boards.not_available_on_40a206', 'Not available on {value0}', value0=f.chip), 12, t.FAINT))
             else:
-                trailing = t.secondary_button(tr('boards.install_569ca4', 'Install'), lambda e, w=fw: self.confirm(w), "download",
-                                              disabled=busy or not self.available(fw))
-            rows.append(ft.Container(ft.Row([
-                t.pixel_icon(fw.icon, size=24, color=t.BLUE if installed else t.MUTED),
-                ft.Column([t.text(fw.name, 14, weight=ft.FontWeight.W_600),
-                           t.text(fw.summary, 12, t.MUTED)], spacing=2, expand=True),
-                trailing,
-            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                actions.append(t.secondary_button(tr('boards.install_569ca4', 'Install'), lambda e, w=fw: self.confirm(w), "download",
+                                                  disabled=busy or not self.available(fw)))
+            icon = t.pixel_icon(fw.icon, size=24, color=t.BLUE if installed else t.MUTED)
+            detail = ft.Column([t.text(fw.name, 14, weight=ft.FontWeight.W_600),
+                                t.text(fw.summary, 12, t.MUTED)], spacing=2, expand=True)
+            if t.compact:
+                # Keep the summary readable on a phone: full width, with the buttons below it.
+                content = ft.Column([
+                    ft.Row([icon, detail], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
+                    *([ft.Row(actions, spacing=8, wrap=True)] if actions else []),
+                ], spacing=8, tight=True)
+            else:
+                content = ft.Row([icon, detail, ft.Row(actions, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)],
+                                 spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            rows.append(ft.Container(content,
                 padding=ft.Padding(12, 10, 12, 10), border_radius=12,
                 bgcolor=ft.Colors.with_opacity(0.04, "#FFFFFF") if installed else None))
         footer = [t.link_button(tr('boards.install_from_a_file_d6ca85', 'Install from a file...'), self._choose_file)]

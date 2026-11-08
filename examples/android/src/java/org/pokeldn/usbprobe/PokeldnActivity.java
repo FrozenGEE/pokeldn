@@ -138,10 +138,14 @@ public class PokeldnActivity extends Activity {
             Log.i(TAG, "WebView " + info.text + ", WasmGC " + found.contains("G") + ", WebGL " + found.contains("W"));
             boolean old = info.major > 0 && info.major < MIN_WEBVIEW;
             if (!found.contains("G") || !found.contains("W") || old || getIntent().getBooleanExtra("oldwebview", false))
-                showNotice("Update Android System WebView",
-                        "pokeldn draws its screens with Android System WebView, and the version on this phone is too old "
-                        + "or cannot use the graphics features they need. The app may show blank screens or no text.\n\n"
-                        + "Update Android System WebView (and Google Chrome) from the Play Store, then open pokeldn again.",
+                showNotice(chinese() ? "更新 Android System WebView" : "Update Android System WebView",
+                        chinese()
+                        ? "pokeldn 用 Android System WebView 绘制界面，但这台手机上的版本太旧，或不支持所需的图形功能。"
+                          + "界面可能空白或没有文字。\n\n请到应用商店更新 Android System WebView（以及 Google Chrome），"
+                          + "再打开 pokeldn。"
+                        : "pokeldn draws its screens with Android System WebView, and the version on this phone is too old "
+                          + "or cannot use the graphics features they need. The app may show blank screens or no text.\n\n"
+                          + "Update Android System WebView (and Google Chrome) from the Play Store, then open pokeldn again.",
                         info, false);
             else loadInterface();
         });
@@ -163,15 +167,23 @@ public class PokeldnActivity extends Activity {
                 return;
             }
             if (seconds == 60 && notice == null)
-                showNotice("The interface has not started",
-                        "pokeldn has been loading for a minute. On some phones an outdated Android System WebView keeps "
-                        + "the screen blank.\n\nUpdate Android System WebView from the Play Store, or keep waiting.",
+                showNotice(chinese() ? "界面没有启动" : "The interface has not started",
+                        chinese()
+                        ? "pokeldn 已经加载了一分钟。部分手机上过旧的 Android System WebView 会让屏幕一直空白。"
+                          + "\n\n请到应用商店更新 Android System WebView，或继续等待。"
+                        : "pokeldn has been loading for a minute. On some phones an outdated Android System WebView keeps "
+                          + "the screen blank.\n\nUpdate Android System WebView from the Play Store, or keep waiting.",
                         PackageInfoLine.current(), true);
             if (seconds < 600) watchFirstFrame(seconds + 2);
         }), 2000);
     }
 
+    private boolean chinese() {
+        return java.util.Locale.getDefault().getLanguage().startsWith("zh");
+    }
+
     private void showNotice(String heading, String body, PackageInfoLine info, boolean waiting) {
+        boolean zh = chinese();
         android.widget.LinearLayout box = new android.widget.LinearLayout(this);
         box.setOrientation(android.widget.LinearLayout.VERTICAL);
         box.setBackgroundColor(0xff0b0b0d);
@@ -185,9 +197,11 @@ public class PokeldnActivity extends Activity {
         box.addView(text(heading, 24, 0xffffffff, dp(20)));
         box.addView(text(body, 15, 0xffb4b4bc, dp(12)));
         box.addView(text("WebView: " + info.text, 13, 0xff7a7a84, dp(12)));
-        box.addView(button("Update Android System WebView", true, v -> openStore(info.name)), wide(dp(28)));
-        if (waiting) box.addView(button("Keep waiting", false, v -> hideNotice()), wide(dp(10)));
-        else box.addView(button("Continue anyway", false, v -> { hideNotice(); loadInterface(); }), wide(dp(10)));
+        box.addView(button(zh ? "更新 Android System WebView" : "Update Android System WebView", true,
+                v -> openStore(info.name)), wide(dp(28)));
+        if (waiting) box.addView(button(zh ? "继续等待" : "Keep waiting", false, v -> hideNotice()), wide(dp(10)));
+        else box.addView(button(zh ? "仍然继续" : "Continue anyway", false,
+                v -> { hideNotice(); loadInterface(); }), wide(dp(10)));
         notice = box;
         frame.addView(box);
     }

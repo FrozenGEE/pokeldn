@@ -95,7 +95,11 @@ live, and back when widened; a desktop window keeps its title bar row above the 
 ## Phones
 
 Below 760 points wide, pages sit in a bottom tab bar and panels show one at a time on a switcher
-(Games, Options, Session). Android and iOS have no Control or Update page.
+(Games, Options, Session). Android and iOS have no Control or Update page. Firmware and plugin
+cards put their buttons below the text, so summaries keep full-width lines, and Settings, About
+writes `label: value` so long version rows and links are not clipped. The Bank's sort and filter
+dropdowns each take a full row, with Select or Clear records below them; a list pane is named
+列表 (Boxes/Boards/Macros) so it is not the same tab as its selected item.
 
 ## The Games page
 
@@ -221,6 +225,35 @@ first.
 |---|---|
 | `session/` (captures, traces, temporary offers), `logs/`, unused generated or imported offers in `pokemon/`, empty folders | offers under a minute old or referenced by saved settings and queues; received files, bank, saves, keys, firmware, settings; symlinks; files changed after the check |
 
+### Backup and restore
+
+Settings, Storage has **Backup and restore**. **This computer** writes one `pokeldn-backup.zip` to
+a folder chosen in the card; a new backup replaces it. **WebDAV** keeps one
+`pokeldn-backup.zip` on the server, with **Save and test** sending a `PROPFIND`: green when the
+folder answers, amber when it is missing and red for a wrong account, no write permission or no
+answer. Picking another destination saves `backup_mode`; the folder is `backup_dir` and the
+account `webdav_url`, `webdav_user` and `webdav_password` in `settings.json`.
+
+`pokeldn.app.backup` sorts the archive into `config/` (`settings.json` without the WebDAV
+password), `plugins/`, `plugin-data/`, `pokemon/` (created records, sidecars and favorites),
+`bank/`, `received/`, `saves/`, `gts/` and `macros/`, with a `manifest.json` counting each.
+`prod.keys` is added under `keys/` only when **Include prod.keys** is on and the chosen file
+exists (a missing file is skipped, never stops the backup). Session captures, logs, the sprite
+cache and pokeldn's own zips are left out.
+
+**WebDAV sync** uses the one file in both directions: **Local to cloud** packs this computer and
+PUTs it over `pokeldn-backup.zip`; **Cloud to local** downloads that file and replaces this
+computer. If the fixed file is absent but an older `pokeldn-backup-YYYYMMDD-HHMMSS.zip` exists,
+the newest older one is used. **From file restore** reads any pokeldn zip, including those older
+files. Restoring clears each category the archive has and writes it back, stages the archive's
+`settings.json` as `DATA/settings.restore.json` for the next launch and writes `keys/` to the
+configured key path. Every backup, sync and restore opens a confirmation stating that it
+overwrites; its confirm button is disabled until the **我已知晓，确认覆盖** checkbox is ticked.
+There is no automatic safety copy. `pokeldn.app.restore` refuses absolute or `..` members and
+keeps device-local settings (paths, board, network, WebDAV account and the backup choices); the
+card offers **Restart now** on desktop, since restored data and staged settings are read at
+launch.
+
 ## Your saves
 
 The FireRed/LeafGreen Mystery Gift tool's Your save tab backs up or restores the console's save
@@ -254,6 +287,16 @@ their game's format with a `.json`.
 | a destination is chosen | `move` converts it into that tool's queue with `"bank": id` |
 | trade N completes | `[done] trade N complete` removes it from the bank |
 | the run fails | it stays in the bank and queue |
+
+### Exchange history and favorites
+
+The Bank sidebar also has **Exchange history** and **Favorites**. Exchange history lists the
+records the program created (the builder, Mystery Gift copies) in
+`%APPDATA%\pokeldn\pokemon\<game>` (inside `POKELDN_DATA` when set); a new record has a `.json`
+with its species, verdict, summary, time and source, and an older record without one is read
+from its name. **Clear records** in its toolbar deletes the listed records after a
+confirmation; a record still queued for a trade must be added again. Star a Pokemon in its pane
+to put it in Favorites; stars are kept in `pokemon/.favorites.json`.
 
 A move uses PKHeX's HOME conversion (`EntityConverter.ConvertToType` through `PKH`) and the
 destination's legality check. The app's trainer becomes handler (`IHandlerUpdate`,
@@ -386,12 +429,10 @@ The shipped version is the ESP-IDF app descriptor's `version` (magic `0xABCD5432
 merged image). An S3 running the Controller firmware gets the download command over Bluetooth; the app
 waits 20 s for the loader port and flashes with `--from-loader`.
 
-`pokeldn-gee` also carries `gui/firmware/pokeldn-radio-gee-s3.bin`, the GEE board build 0.9.6
-ESP32-S3 image (upstream firmware 1.10.0): 320x240 screen, ES8311 speaker, ES7210 microphone,
-GC0308 camera and the exchange sound effects at 75% default volume. When the file is present,
-`gui.board.image_for` uses it for Wireless on an
-ESP32-S3, so the same row's Install/Update flashes it; the other chips, Controller and Bluetooth
-wireless keep the released images. A source checkout has no such file and uses the released S3 image.
+`pokeldn-gee` flashes the official firmware images for every chip, including the ESP32-S3
+Wireless image (official firmware 1.10.0). No GEE-specific board image is bundled; a source
+checkout with no images files downloads them from the official pokeldn releases. Board support
+changes for specific hardware are prepared upstream rather than shipped only in this build.
 
 A board kept as a [portable beacon](hardware_esp32.md#portable-beacon) shows Kept gift with Remove.
 
@@ -617,6 +658,17 @@ title. `[save]` lines draw the same bar.
 
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` (5 s timeout). A
 `vX.Y.Z` tag above `pokeldn.__version__` adds an Update entry with Update now or Download.
+
+### GitHub accelerator
+
+Settings, GitHub accelerator picks **Direct** or one of nine mirror domains (`gh-proxy.com`,
+`ghfile.geekertao.top`, `gitproxy.click`, `gh-proxy.org`, `ghproxy.imciel.com`, `ghfast.top`,
+`ghproxy.cfd`, `ghproxy.cn`, `gh-proxy.net`). A selection applies at once and probes a small
+GitHub file; the dot is green below 1000 ms, amber above, and red when the probe fails. Mirrors
+are third-party transports: they see the address, while update and plugin packages are still
+checked with SHA-256. `pokeldn.app.github_mirror` prefixes the pick to GitHub hosts only, and
+`update._open` applies it to the update check, release and plugin downloads, plugin source
+listings and sprites. Package and release SHA-256 checks are unchanged.
 
 Update now (`pokeldn.app.update`) downloads the platform archive and `SHA256SUMS` into `update/`,
 refuses a checksum mismatch, unpacks (`ditto -x -k`, `tarfile` `data` filter, `zipfile`), and starts

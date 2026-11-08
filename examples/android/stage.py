@@ -21,7 +21,9 @@ for filename in result.stdout.decode().split('\0'):
     target = DEST / (Path('ldn') / relative.relative_to('vendor/LDN/ldn')
                      if relative.is_relative_to('vendor/LDN/ldn') else relative)
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / relative, target)
+    source = ROOT / relative
+    if source.is_file():     # a tracked file deleted in the working tree is not staged
+        shutil.copy2(source, target)
 # Chaquopy extracts packages to real files and runpy runs only real files: the launchers become one.
 (DEST / 'bin' / '__init__.py').write_text('')
 # The firmware images the release build writes (gui/board.py); absent from a fresh checkout.

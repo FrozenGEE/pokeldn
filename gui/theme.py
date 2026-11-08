@@ -376,7 +376,8 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
                         text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
 
 
-def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
+def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, expand: bool = True,
+             **kwargs) -> ft.Dropdown:
     # menu_height fixes the menu's height: a short list fills it with blank rows. No options yet means filled later.
     if options and len(options) * MENU_ROW < kwargs.get("menu_height", 0):
         del kwargs["menu_height"]
@@ -395,7 +396,7 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
     return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
                        text_size=13, text_style=ft.TextStyle(font_family_fallback=FALLBACK_FONTS),
-                       expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
+                       expand=expand, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
                        trailing_icon=pixel_icon("chevron-down", color=MUTED),
                        selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
                        menu_style=ft.MenuStyle(bgcolor=PANEL, shape=ft.RoundedRectangleBorder(radius=10)),

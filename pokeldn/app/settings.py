@@ -31,8 +31,8 @@ class Settings:
     received: str = str(RECEIVED)
     radio_port: str = ""
     radio: str = ""         # external radio scheme (pokeldn.ldn.radios); empty: the board
-    plugins: list = field(default_factory=lambda: ["community-zh-hans"])   # plugin ids turned on
-    app_language: str = "community-zh-hans"   # language-pack plugin id; empty selects English
+    plugins: list = field(default_factory=list)   # plugin ids turned on
+    app_language: str = ""   # language-pack plugin id; empty selects English
     baud: int = 921600
     tx_power: float = 0     # the board's transmit power cap in dBm; 0: the driver's maximum
     capture: bool = True
@@ -43,6 +43,14 @@ class Settings:
     retry_trades: bool = True   # a trade run that failed starts again on the trades left (gui/views/games.py)
     sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
     check_updates: bool = True   # ask GitHub for a newer release at launch
+    github_mirror: str = ""   # GitHub accelerator prefix (pokeldn.app.github_mirror); empty: direct
+    # One zip of settings and Pokemon files (pokeldn.app.backup): "local" or "webdav".
+    backup_mode: str = "local"
+    backup_dir: str = str(RECEIVED.parent / "Backups")
+    webdav_url: str = ""
+    webdav_user: str = ""
+    webdav_password: str = ""
+    backup_keys: bool = False   # add the chosen prod.keys to the archive (off: keys stay on this computer)
     # "empty" or "made": what the bank and the builder put in a HOME tracker HOME never issued (docs/gui.md,
     # The bank); pokeldn.pokemon.Service sends it with every request.
     home_tracker: str = "empty"
@@ -60,7 +68,7 @@ class Settings:
     gender: int = 0
     # With per_game_trainer, game -> the fields of the trainer above it replaces for that game: ot, gender, language,
     # and tid and sid as that game shows them (docs/gui.md, A trainer per game).
-    per_game_trainer: bool = True
+    per_game_trainer: bool = False
     game_trainers: dict = field(default_factory=dict)
     # "gba" or "switch" -> the newest console trainer a run reported (pokeldn.console_trainer), for Find mine.
     found_trainers: dict = field(default_factory=dict)
@@ -196,6 +204,28 @@ def switch_ids_valid(tid: int, sid: int) -> bool:
 
 
 BAD = PATH.with_name("settings.json.bad")
+STAGED = PATH.with_name("settings.restore.json")
+
+
+def _apply_staged() -> None:
+    """A restore writes settings.restore.json instead of settings.json, so the running app cannot
+    overwrite it; the next launch puts it in place before loading (pokeldn.app.restore)."""
+    if not STAGED.is_file():
+        return
+    try:
+        data = json.loads(STAGED.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp = PATH.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            os.replace(tmp, PATH)
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            STAGED.unlink()
+        except OSError:
+            pass
 # What the last load() could not use: {"path": the copy kept at BAD, "fields": the names reset, empty when
 # the whole file was unreadable}. It outlives later loads in the process (gui/main.py loads twice), so the
 # app can tell the player once.
@@ -223,6 +253,7 @@ def _set_aside(fields: list[str]) -> None:
 
 
 def load() -> Settings:
+    _apply_staged()
     try:
         data = json.loads(PATH.read_text(encoding="utf-8"))
         if not isinstance(data, dict):

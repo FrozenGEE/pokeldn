@@ -7,12 +7,12 @@ android {
     namespace 'org.pokeldn.usbprobe'
     compileSdk 36
     defaultConfig {
-        applicationId System.getenv('POKELDN_ANDROID_APPLICATION_ID') ?: 'org.pokeldn.gee'
+        applicationId 'org.pokeldn.usbprobe'
         minSdk 26
         targetSdk 36
         // The release workflow numbers each build: a higher versionCode installs as an update.
         versionCode((System.getenv('POKELDN_ANDROID_VERSION_CODE') ?: '4') as int)
-        versionName System.getenv('POKELDN_ANDROID_VERSION_NAME') ?: '0.4-gui'
+        versionName System.getenv('POKELDN_ANDROID_VERSION_NAME') ?: '0.60.2'
         ndk { abiFilters 'arm64-v8a' }
     }
     signingConfigs {

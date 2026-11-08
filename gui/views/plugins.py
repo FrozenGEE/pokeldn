@@ -338,10 +338,20 @@ class PluginsView:
         icon = ft.Container(ft.Image(src=entry.icon, width=48, height=48, fit=ft.BoxFit.CONTAIN,
                                      error_content=plugin_icon()), width=48, height=48, border_radius=48 * 0.22,
                             clip_behavior=ft.ClipBehavior.ANTI_ALIAS) if entry.icon else plugin_icon()
-        return t.surface(ft.Container(ft.Row([
-            icon, ft.Column(lines, spacing=4, expand=True),
-            ft.Row(actions, spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START), padding=ft.Padding(16, 14, 12, 14)))
+        text_column = ft.Column(lines, spacing=4, expand=True)
+        if t.compact:
+            # A phone cannot hold the description and the Install button side by side: the text
+            # keeps the full width and the buttons drop below it.
+            content = ft.Column([
+                ft.Row([icon, text_column], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+                *([ft.Row(actions, spacing=4, wrap=True)] if actions else []),
+            ], spacing=10, tight=True)
+        else:
+            content = ft.Row([
+                icon, text_column,
+                ft.Row(actions, spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+        return t.surface(ft.Container(content, padding=ft.Padding(16, 14, 12, 14)))
 
     def _sources(self, listings: list) -> list[ft.Control]:
         add = t.card(tr('plugins.add_a_source', 'Add a source'), ft.Row([

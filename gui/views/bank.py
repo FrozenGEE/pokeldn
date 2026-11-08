@@ -2,8 +2,10 @@
 [pokeldn.app.bank, docs/gui.md, The bank]."""
 from pokeldn.app.i18n import t as tr
 import os
+import re
 import shutil
 import threading
+from dataclasses import replace
 
 import flet as ft
 
@@ -13,13 +15,15 @@ from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import open_folder
 from gui.localization import SERVICE, date_time, summary_lines, summary_text, translate
 from pokeldn import pokemon
-from pokeldn.app import bank
+from pokeldn.app import bank, created
 from pokeldn.app.settings import GEN3
 from pokeldn.app.catalog import GAMES
 
 NAMES = {game.key: game.name for game in GAMES}
 ALL = "all"
 DEX = "dex"   # the Pokedex: every species a bank game holds, and whether the bank has one
+CREATED = "created"   # Pokemon the program made, from the offer queue's folder
+FAVORITES = "favorites"   # starred bank or created records
 STATS = ["HP", "Atk", "Def", "SpA", "SpD", "Spe"]
 SORTS = {"newest": lambda e: (-e.created, e.id), "oldest": lambda e: (e.created, e.id),
          "dex": lambda e: (e.species_id, -e.created), "name": lambda e: (e.summary.split(" · ")[0].casefold(), -e.created)}
@@ -39,17 +43,25 @@ def game_icon(key: str, size: int = 20) -> ft.Control:
                     filter_quality=ft.FilterQuality.NONE, semantics_label=NAMES.get(key, key))
 
 
+def _species_name(name: str) -> str:
+    """The name Service.keep puts in a file name: letters and digits only."""
+    return re.sub(r"[^A-Za-z0-9]+", "", name).casefold()
+
+
 class Tile:
     """One banked Pokemon in the grid, built once and repainted in place: a click redraws one tile, not the box."""
 
-    def __init__(self, view, entry: bank.Entry, queued: bool):
-        self.entry, self.queued = entry, queued
+    def __init__(self, view, entry: bank.Entry, queued: bool, favorite: bool = False):
+        self.entry, self.queued, self.favorite = entry, queued, favorite
         self.check = ft.Container(left=2, top=2, bgcolor=t.BG, border_radius=4, visible=False)
+        self.star = ft.Container(t.pixel_icon("star", size=12, color=t.AMBER), left=2, bottom=2,
+                                 visible=favorite)
         self.control = ft.Container(ft.Stack([
             Sprite(view.app, entry.species_id, entry.shiny, size=MINI).control,
             ft.Container(game_icon(entry.game, 16), right=0, bottom=0),
             ft.Container(t.pixel_icon("arrows-horizontal", size=12, color=t.BLUE), right=2, top=2, visible=queued),
             self.check,
+            self.star,
         ]), padding=4, border_radius=14, tooltip=summary_text(entry.summary),
             on_click=lambda e: view.click(entry.id), on_long_press=lambda e: view.pick(entry.id))
 
@@ -67,6 +79,9 @@ class BankView:
         self.visible = False
         self.shown = ALL                  # the game whose Pokemon the grid shows
         self.items: list[bank.Entry] = []
+        self.created_items: list[created.Entry] = []   # programs' creations, newest first
+        self.created_named = False        # legacy records' species ids are looked up once
+        self.favorites: set[str] = created.favorites()
         self.selected: str = ""           # an Entry.id
         self.target: str = ""             # the game chosen to send the selected Pokemon to
         self.routes: dict[str, dict] = {}   # Entry.id -> pokemon.Service.destinations
@@ -92,9 +107,21 @@ class BankView:
         self.search = t.field(hint=tr('bank.search_by_name', 'Search'), on_change=self._search, expand=True)
         self.pick_button = t.secondary_button(tr('bank.select_several', 'Select'), lambda e: self._picking(not self.picking),
                                               "checkbox")
+        self.clear_history = t.secondary_button(tr('bank.clear_history', 'Clear records'), self._confirm_clear_history,
+                                                "trash", color=t.RED, visible=False)
         self.actions = ft.Row(spacing=8, run_spacing=8, wrap=True, visible=False)
         self.detail = ft.Column(spacing=24, scroll=ft.ScrollMode.AUTO, expand=True)
         self.note = t.text("", 12, t.MUTED)
+        sort_tools = t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
+                                 ("oldest", tr('bank.sort_oldest', 'Oldest first')),
+                                 ("dex", tr('bank.sort_dex', 'Pokedex number')),
+                                 ("name", tr('bank.sort_name', 'Name'))], self.sort,
+                                on_select=lambda e: self._sorted(e.control.value))
+        only_tools = t.dropdown([("any", tr('bank.only_any', 'Every Pokemon')),
+                                 ("shiny", tr('bank.only_shiny', 'Shiny')),
+                                 ("queued", tr('bank.only_queued', 'Waiting to trade')),
+                                 ("illegal", tr('bank.only_illegal', 'Not legal'))], self.only,
+                                on_select=lambda e: self._only(e.control.value))
         self.panes = t.Panes(
             (tr('bank.pane_boxes', 'Boxes'), "archive", t.panel(ft.Column([
                 t.panel_header(tr('bank.bank_676c47', 'Bank'),
@@ -106,18 +133,14 @@ class BankView:
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
             (tr('bank.pane_box', 'Box'), "package", drop.target(ft.Container(ft.Column([
                 ft.Row([self.search], spacing=8),
-                box_tools := ft.Row([
-                    t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
-                                ("oldest", tr('bank.sort_oldest', 'Oldest first')),
-                                ("dex", tr('bank.sort_dex', 'Pokedex number')),
-                                ("name", tr('bank.sort_name', 'Name'))], self.sort,
-                               on_select=lambda e: self._sorted(e.control.value)),
-                    t.dropdown([("any", tr('bank.only_any', 'Every Pokemon')),
-                                ("shiny", tr('bank.only_shiny', 'Shiny')),
-                                ("queued", tr('bank.only_queued', 'Waiting to trade')),
-                                ("illegal", tr('bank.only_illegal', 'Not legal'))], self.only,
-                               on_select=lambda e: self._only(e.control.value)),
-                    self.pick_button], spacing=8),
+                # A phone gives each dropdown its own row: three controls on one line clipped
+                # "Newest first" and "Every Pokemon" to a few characters.
+                box_tools := (ft.Column([
+                    ft.Row([sort_tools], spacing=8),
+                    ft.Row([only_tools], spacing=8),
+                    ft.Row([self.pick_button, self.clear_history], spacing=8, wrap=True),
+                ], spacing=8, tight=True) if t.compact else
+                    ft.Row([sort_tools, only_tools, self.pick_button, self.clear_history], spacing=8)),
                 dex_tools := ft.Row([
                     t.dropdown([("all", tr('bank.dex_all', 'Every species')),
                                 ("have", tr('bank.dex_have', 'In the bank')),
@@ -145,8 +168,10 @@ class BankView:
         self.visible = True
         self.routes.clear()     # the HOME tracker setting may have changed what a move gives
         self.refresh(update=False)
-        if entry := self._entry():
+        if (entry := self._entry()) and not isinstance(entry, created.Entry):
             threading.Thread(target=self._find_routes, args=(entry,), daemon=True).start()
+        elif self.shown in (CREATED, FAVORITES) and not self.created_named:
+            threading.Thread(target=self._load_created_names, daemon=True).start()
 
     def leave(self) -> None:
         self.visible = False
@@ -161,8 +186,12 @@ class BankView:
 
     def refresh(self, update: bool = True) -> None:
         self.items = bank.entries()
-        held = {e.id for e in self.items}
-        bank.prune(self.app.settings, held)
+        self.created_items = created.entries()
+        self.created_named = False
+        self.favorites = created.favorites()
+        banked = {e.id for e in self.items}
+        held = banked | {e.id for e in self.created_items}
+        bank.prune(self.app.settings, banked)
         if self.selected not in held:
             self.selected, self.target = "", ""
         self.picked &= held
@@ -180,6 +209,11 @@ class BankView:
         rows.append(self._box(DEX, tr('bank.pokedex', 'Pokedex'),
                               f"{held} / {len(self.dex_names)}" if self.dex_names else held,
                               t.pixel_icon("book-open", color=t.MUTED)))
+        rows.append(self._box(CREATED, tr('bank.created_history', 'Exchange history'), len(self.created_items),
+                              t.pixel_icon("clock", color=t.MUTED)))
+        favorited = sum(1 for e in (*self.items, *self.created_items) if e.id in self.favorites)
+        rows.append(self._box(FAVORITES, tr('bank.favorites', 'Favorite'), favorited,
+                              t.pixel_icon("star", color=t.MUTED)))
         rows += [self._box(key, NAMES[key], counts[key], game_icon(key, 28)) for key in NAMES if counts[key]]
         self.boxes.controls = rows
 
@@ -194,13 +228,15 @@ class BankView:
 
     def _show(self, key: str) -> None:
         self.shown = key
-        if key == DEX and self.picking:
+        if (key in (DEX, CREATED)) and self.picking:
             self._picking(False)
         self.render_boxes()
         self.render_grid()
         self.control.update()
         if key == DEX and not self.dex_names:
             threading.Thread(target=self._load_dex, daemon=True).start()
+        if key in (CREATED, FAVORITES) and not self.created_named:
+            threading.Thread(target=self._load_created_names, daemon=True).start()
 
     def _keep(self, name: str, key: str) -> None:
         setattr(self, name, key)
@@ -222,9 +258,18 @@ class BankView:
         self.render_grid()
         self.control.update()
 
+    def _entries(self) -> list[bank.Entry] | list[created.Entry]:
+        if self.shown == CREATED:
+            return self.created_items
+        if self.shown == FAVORITES:
+            return [e for e in (*self.items, *self.created_items) if e.id in self.favorites]
+        return self.items
+
     def _matches(self, entry: bank.Entry) -> bool:
         if self.only == "shiny" and not entry.shiny or self.only == "illegal" and entry.legal:
             return False
+        if self.shown in (CREATED, FAVORITES):
+            return self.only != "queued" and (not self.query or self.query in self._haystack(entry))
         if self.only == "queued" and entry.id not in self.queued:
             return False
         return self.shown in (ALL, entry.game) and (not self.query or self.query in self._haystack(entry))
@@ -235,7 +280,7 @@ class BankView:
         return " ".join((summary_text(entry.summary), entry.summary, NAMES.get(entry.game, entry.game))).casefold()
 
     def _shown(self) -> list[bank.Entry]:
-        return [e for e in self.items if self._matches(e)]
+        return [e for e in self._entries() if self._matches(e)]
 
     def render_grid(self) -> None:
         """Every tile stays in the grid and a filter only hides some: a hidden tile costs nothing on screen,
@@ -249,13 +294,22 @@ class BankView:
             self.render_actions()
             return
         shown = self._shown()
-        where = tr('bank.in_the_bank_f69744', 'in the bank') if self.shown == ALL else tr('bank.from_7f2df4', 'from {value0}', value0=NAMES[self.shown])
-        self.heading.value = (tr('bank.pokemon_3a4d02', '{value0} Pokemon {value1}', value0=len(shown), value1=where) if shown else
-                              tr('bank.nothing_matches', 'No Pokemon matches this search.') if (self.query or self.only != "any") and self.items else
-                              tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
-                              + (tr('bank.drop_a_file_here', ' Drop a Pokemon file, a game save or a PKSM bank here to import what it holds.')
-                                 if drop.AVAILABLE else ""))
-        self.grid.controls = [self._tile(e, e.id in self.queued) for e in sorted(self.items, key=SORTS[self.sort])]
+        if self.shown == CREATED:
+            heading = tr('bank.created_heading', 'Exchange history: {value0}', value0=len(shown)) if shown else \
+                tr('bank.no_created_yet', 'No exchange history yet. Pokemon created on the Games page and Mystery Gift copies leave a record here.')
+        elif self.shown == FAVORITES:
+            heading = tr('bank.favorites_heading', 'Favorites: {value0}', value0=len(shown)) if shown else \
+                tr('bank.no_favorites_yet', 'No favorites yet. Open the details of a Pokemon and choose Favorite; it appears here.')
+        else:
+            where = tr('bank.in_the_bank_f69744', 'in the bank') if self.shown == ALL else tr('bank.from_7f2df4', 'from {value0}', value0=NAMES[self.shown])
+            empty = (tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
+                     + (tr('bank.drop_a_file_here', ' Drop a Pokemon file, a game save or a PKSM bank here to import what it holds.')
+                        if drop.AVAILABLE else ""))
+            heading = (tr('bank.pokemon_3a4d02', '{value0} Pokemon {value1}', value0=len(shown), value1=where) if shown else
+                       tr('bank.nothing_matches', 'No Pokemon matches this search.') if (self.query or self.only != "any") and self._entries() else
+                       empty)
+        self.heading.value = heading
+        self.grid.controls = [self._tile(e, e.id in self.queued) for e in sorted(self._entries(), key=SORTS[self.sort])]
         self.render_actions()
 
     # The Pokedex
@@ -323,9 +377,10 @@ class BankView:
         self._show(ALL)
 
     def _tile(self, entry: bank.Entry, queued: bool) -> ft.Control:
+        favorite = entry.id in self.favorites
         tile = self.tiles.get(entry.id)
-        if tile is None or tile.entry != entry or tile.queued != queued:
-            tile = self.tiles[entry.id] = Tile(self, entry, queued)
+        if tile is None or tile.entry != entry or tile.queued != queued or tile.favorite != favorite:
+            tile = self.tiles[entry.id] = Tile(self, entry, queued, favorite)
         self._paint(entry.id)
         tile.control.visible = self._matches(entry)
         return tile.control
@@ -356,6 +411,8 @@ class BankView:
             self.click(entry_id)
 
     def _picking(self, on: bool) -> None:
+        if on and self.shown in (CREATED, FAVORITES):
+            return
         self.picking = on
         self.picked.clear()
         self.picked_target = ""
@@ -486,8 +543,10 @@ class BankView:
         threading.Thread(target=work, daemon=True).start()
 
     def render_actions(self) -> None:
+        self.pick_button.visible = self.shown not in (CREATED, FAVORITES)
+        self.clear_history.visible = self.shown == CREATED
         self.pick_button.content = tr('bank.done_selecting', 'Done') if self.picking else tr('bank.select_several', 'Select')
-        self.actions.visible = self.picking
+        self.actions.visible = self.picking and self.shown not in (CREATED, FAVORITES)
         if not self.picking:
             return
         count = len(self.picked)
@@ -566,11 +625,11 @@ class BankView:
         self.note.update()
         self.panes.show(2)
         entry = self._entry()
-        if entry and entry.id not in self.routes:
+        if entry and not isinstance(entry, created.Entry) and entry.id not in self.routes:
             threading.Thread(target=self._find_routes, args=(entry,), daemon=True).start()
 
     def _entry(self) -> bank.Entry | None:
-        return next((e for e in self.items if e.id == self.selected), None)
+        return next((e for e in self._entries() if e.id == self.selected), None)
 
     def _find_routes(self, entry: bank.Entry) -> None:
         trainer = self.app.settings.trainer(entry.game)
@@ -600,6 +659,9 @@ class BankView:
         if entry is None:
             self.detail.controls = [t.text(tr('bank.pick_a_pokemon_to_see_where_it_can_go_3b278b', 'Pick a Pokemon to see where it can go.'), 13, t.MUTED)]
             return
+        if isinstance(entry, created.Entry):
+            self.render_created(entry)
+            return
         head, rest = summary_lines(entry.summary)
         about = ft.Column([
             t.text(head, 15, weight=ft.FontWeight.W_600),
@@ -628,10 +690,99 @@ class BankView:
             controls.append(t.section(tr('bank.battle_set', 'Battle set'), self._battle(battle)))
         controls.append(ft.Row([
             *([] if queued else [t.secondary_button(tr('bank.edit_464c4f', 'Edit'), lambda e: self._edit(entry), "edit")]),
+            t.secondary_button(tr('bank.unfavorite', 'Remove from favorites') if entry.id in self.favorites else tr('bank.favorite', 'Favorite'),
+                               lambda e: self._favorite(entry.id), "star", color=t.AMBER),
             t.secondary_button(tr('bank.export_366489', 'Export'), lambda e: self.app.page.run_task(self._export, entry), "upload"),
             t.secondary_button(tr('bank.remove_c3812f', 'Remove'), lambda e: self._remove(entry), "trash"),
         ], spacing=8, wrap=True))
         self.detail.controls = controls
+
+    def render_created(self, entry: created.Entry) -> None:
+        """A record the program made: when, from what, and where its file is; no trading tools."""
+        head, rest = summary_lines(entry.summary)
+        source = {"built": tr('bank.source_built', 'Pokemon builder'),
+                  "gift": tr('bank.source_gift', 'Mystery Gift')}.get(
+            entry.source, tr('bank.source_created', 'Created by the program'))
+        about = ft.Column([
+            t.text(head, 15, weight=ft.FontWeight.W_600),
+            t.text(rest, 12, t.MUTED),
+            ft.Row([game_icon(entry.game), t.text(tr('bank.created_in_game', 'Created in {value0}', value0=NAMES.get(entry.game, entry.game)), 12, t.SOFT)], spacing=6),
+            t.text(tr('bank.created_at', 'Created {value0}', value0=date_time(entry.created)), 12, t.FAINT),
+            t.badge(tr('bank.created_source', 'Source: {value0}', value0=source), t.BLUE, "sparkles"),
+            t.text(entry.path, 11, t.FAINT, selectable=True, font_family=t.MONO),
+        ], spacing=4, expand=True)
+        favorite = entry.id in self.favorites
+        self.detail.controls = [
+            ft.Row([Sprite(self.app, entry.species_id, entry.shiny, size=SIZE).control, about],
+                   spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+            ft.Row([t.secondary_button(tr('bank.unfavorite', 'Remove from favorites') if favorite else tr('bank.favorite', 'Favorite'),
+                                       lambda e: self._favorite(entry.id), "star", color=t.AMBER),
+                    t.secondary_button(tr('bank.show_in_folder', 'Show in folder'),
+                                       lambda e: open_folder(os.path.dirname(entry.path)), "folder")],
+                   spacing=8, wrap=True),
+        ]
+
+    def _load_created_names(self) -> None:
+        """Older records have no sidecar: their species id comes from the folder's name list."""
+        wanted = {(e.game, _species_name(e.species)) for e in self.created_items if not e.species_id}
+        if not wanted:
+            self.created_named = True
+            return
+        ids: dict[tuple[str, str], int] = {}
+        for game in {game for game, _ in wanted}:
+            try:
+                # The English names, since the file name and the sidecar keep the English species.
+                for item in pokemon.SERVICE.species(game):
+                    ids[(game, _species_name(item["name"]))] = int(item["id"])
+            except (OSError, pokemon.BuilderError):
+                continue
+        changed = False
+        for index, entry in enumerate(self.created_items):
+            if entry.species_id:
+                continue
+            species_id = ids.get((entry.game, _species_name(entry.species)))
+            if species_id:
+                self.created_items[index] = replace(entry, species_id=species_id)
+                changed = True
+        self.created_named = True
+        if changed:
+            def done():
+                if self.visible and self.shown in (CREATED, FAVORITES):
+                    self.render_grid()
+                    self.control.update()
+            self.app.ui(done)
+
+    def _favorite(self, entry_id: str) -> None:
+        if entry_id in self.favorites:
+            self.favorites.discard(entry_id)
+        else:
+            self.favorites.add(entry_id)
+        created.save_favorites(self.favorites)
+        self.render_boxes()
+        self.render_grid()
+        self.render_detail()
+        self.control.update()
+
+    def _confirm_clear_history(self, e) -> None:
+        if not self.created_items:
+            return
+        count = len(self.created_items)
+
+        def done(e):
+            self.app.page.pop_dialog()
+            removed = created.clear(self.created_items)
+            self.favorites = created.favorites()
+            self.selected = ""
+            self.refresh()
+            self._say(tr('bank.history_cleared', 'Cleared {value0} records.', value0=removed), t.MUTED)
+
+        self.app.page.show_dialog(t.dialog(
+            title=t.text(tr('bank.clear_history_title', 'Clear the exchange history?'), 18),
+            content=t.text(tr('bank.clear_history_detail',
+                              'This deletes {value0} Pokemon files created in the program. If they are still queued for a trade, add them again after clearing.',
+                              value0=count), 13, t.MUTED, width=420),
+            actions=[t.button(tr('bank.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog(), filled=False),
+                     t.button(tr('bank.clear_history', 'Clear records'), done, color=t.RED)]))
 
     def _battle(self, battle: dict) -> ft.Control:
         effort = {"evs": tr('bank.evs', 'EVs'), "avs": tr('bank.avs', 'AVs'), "gvs": tr('bank.gvs', 'GVs')}
