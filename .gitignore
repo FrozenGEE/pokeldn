@@ -7,6 +7,7 @@
 !/tools/
 !/docs/
 !/scripts/
+!/src/
 # ARM sources for CLI_RUN_BUFFER_SCRIPT payloads; the assembled bytes are committed in
 # pokeldn/frlg/rom/buffer_payloads.py and these are what they must still assemble to.
 !/asm/

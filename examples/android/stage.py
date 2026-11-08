@@ -8,7 +8,8 @@ DEST = HERE / 'staged'
 if DEST.exists():
     shutil.rmtree(DEST)
 DEST.mkdir()
-packages = ('pokeldn', 'bin', 'config', 'gui', 'docs', 'vendor/LDN/ldn')
+packages = ('pokeldn', 'bin', 'config', 'gui', 'docs', 'src', 'vendor/LDN/ldn',
+            'firmware/esp32/version.txt')
 result = subprocess.run(['git', '-C', str(ROOT), 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', *packages],
                         check=True, capture_output=True)
 for filename in result.stdout.decode().split('\0'):

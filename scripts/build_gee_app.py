@@ -26,8 +26,9 @@ NAME = "pokeldn-gee"
 OUT = DIST_PARENT / NAME
 FINAL = ROOT / NAME
 OFFICIAL = Path(os.environ.get("POKELDN_OFFICIAL", r"D:\Users\GEE\Desktop\pokeldn\_internal"))
-# FrozenGEE v0.9.6: 320x240 screen, ES8311 speaker, ES7210 microphone, GC0308 camera, the trade
-# sound effects, default volume 75% and the Poké Ball wobble animation. Merged image.
+# GEE board build 0.9.6 (upstream firmware 1.10.0): 320x240 screen, ES8311 speaker, ES7210
+# microphone, GC0308 camera, the exchange sound effects, default volume 75% and the Poké Ball
+# wobble animation. Merged image.
 GEE_IMAGE = Path(os.environ.get(
     "POKELDN_GEE_IMAGE", r"D:\vs-code\gee\backup\gee-v0.9.6-full-20261108.bin"))
 
@@ -92,6 +93,7 @@ def main() -> int:
         (ROOT / "gui" / "assets", "gui/assets"),
         (ROOT / "gui" / "guide.md", "gui"),
         (ROOT / "pokeldn", "pokeldn"),
+        (ROOT / "src", "src"),
         (ROOT / "vendor/LDN/ldn", "vendor/LDN/ldn"),
         (ROOT / "vendor/LDN/LICENSE", "vendor/LDN"),
         (ROOT / "LICENSE", "."),
@@ -167,15 +169,18 @@ def main() -> int:
         "Windows build of pokeldn 0.60.2 with the GEE 320x240 Session screen mirror.\n"
         "The board's status, exchange and opening pages are rendered at 320x240 and\n"
         "scaled proportionally to 300x225 in the Session panel.\n"
-        "Based on the official pokeldn 0.60.2 source; GEE v0.9.3, v0.9.5 and v0.9.6 changes are merged in.\n\n"
+        "Based on the official pokeldn source; GEE board builds 0.9.3, 0.9.5 and 0.9.6 are merged in.\n"
+        "Firmware 1.10.0 (upstream) · GEE build 0.9.6 · pokeldn 0.60.2\n\n"
         "v0.9.1: the Session mirror reads firmware/esp32/version.txt, so it shows\n"
         "v1.10.0 instead of vunknown.\n\n"
         "v0.9.5: the installed-state Wireless button says Reinstall / 重新安装.\n\n"
-        "v0.9.6: Poké Ball wobble animation on the idle/sniffing page.\n\n"
-        "The Wireless firmware on an ESP32-S3 is the FrozenGEE v0.9.6 image:\n"
-        "the board's 320x240 screen, ES8311 speaker, ES7210 microphone, GC0308\n"
-        "camera, the trade sound effects, a 75% default volume and the ball\n"
-        "wobble animation. The other modes keep the released firmware images.\n\n"
+        "GEE build 0.9.6 (firmware 1.10.0): Poké Ball wobble animation on the\n"
+        "idle/sniffing page.\n\n"
+        "The Wireless firmware on an ESP32-S3 is the GEE board build 0.9.6 image\n"
+        "(upstream firmware 1.10.0): the board's 320x240 screen, ES8311 speaker,\n"
+        "ES7210 microphone, GC0308 camera, the exchange sound effects, a 75% default\n"
+        "volume and the ball wobble animation. The other modes keep the released\n"
+        "firmware images.\n\n"
         "Run pokeldn-gee.exe. The first launch may take a few seconds while Flet\n"
         "unpacks its viewer. Keep the _internal folder beside the exe.\n",
         encoding="utf-8", newline="\r\n")

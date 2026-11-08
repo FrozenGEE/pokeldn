@@ -42,9 +42,10 @@ FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # writte
 FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
 FIRMWARE_C3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c3.bin")
 FIRMWARE_C6 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c6.bin")
-# This build's ESP32-S3 image for the Wireless mode: the FrozenGEE v0.9.3 board firmware (320x240
-# screen, ES8311 speaker, ES7210 microphone, GC0308 camera, trade SFX at 75% volume). Absent in a
-# source checkout, where the released S3 image is used and the Board page downloads it as usual.
+# This build's ESP32-S3 image for the Wireless mode: the GEE board build 0.9.6 firmware (upstream
+# 1.10.0; 320x240 screen, ES8311 speaker, ES7210 microphone, GC0308 camera, trade SFX at 75%
+# volume). Absent in a source checkout, where the released S3 image is used and the Board page
+# downloads it as usual.
 FIRMWARE_GEE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-gee-s3.bin")
 # The Bluetooth host link for the iOS app (docs/hardware_esp32.md, Bluetooth); built for these two chips.
 FIRMWARE_BLE = {"ESP32": os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-ble.bin"),

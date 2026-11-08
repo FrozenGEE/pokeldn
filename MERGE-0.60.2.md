@@ -2,7 +2,7 @@
 
 - 模板：`FrozenGEE/pokeldn` `main`（HEAD `ad2e98ed5b505cda3d70496878dc91b1ae6bf289`，
   `List 0.60.2 in the AltStore source`）
-- 本地基线：`FrozenGEE-pokeldn` 0.58.0 + GEE 改动（v0.9.3 内部版）
+- 本地基线：`FrozenGEE-pokeldn` 0.58.0 + GEE 改动（GEE build 0.9.3，固件 1.10.0）
 - 本目录是 **0.60.2 + 本地 GEE 改动**。
 
 ## 已移植的本地改动
@@ -16,8 +16,8 @@
 - `firmware/esp32/main/{scene.c,scene.h,radio.c,display.h,CMakeLists.txt}`：GEE 固件 overrides
 - `tests/test_esp32_screen.py`：GEE 场景测试
 - `scripts/build_gee_app.py`：GEE Windows 构建脚本（含 `firmware/esp32/version.txt` 打包）
-- v0.9.6：待机/搜索页增加精灵球摇晃动画；Session 镜像是同一套动画
-- 内置固件：`D:\vs-code\gee\backup\gee-v0.9.6-full-20261108.bin`（v0.9.6，默认音量 75%）
+- GEE build 0.9.6（固件 1.10.0）：待机/搜索页增加精灵球摇晃动画；Session 镜像是同一套动画
+- 内置固件：`D:\vs-code\gee\backup\gee-v0.9.6-full-20261108.bin`（GEE build 0.9.6，固件 1.10.0，默认音量 75%）
 
 ## 构建
 

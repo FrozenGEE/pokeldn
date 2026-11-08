@@ -16,7 +16,7 @@ import zlib
 from functools import lru_cache
 from pathlib import Path
 
-from pokeldn.app.paths import DATA
+from pokeldn.app.paths import DATA, ROOT
 
 # The files behind `sprites.front_default` / `front_shiny` of https://pokeapi.co/api/v2/pokemon/{id}.
 BASE = os.environ.get("POKELDN_SPRITE_BASE",
@@ -198,8 +198,9 @@ ICON_KEY = r"[a-z0-9][a-z0-9-]*"                 # an item, ball or ribbon file,
 
 class SpriteCache:
     def __init__(self, folder: Path | None = None, base: str | None = None, online: bool = True,
-                 key: str = POKEMON_KEY):
+                 key: str = POKEMON_KEY, bundled: Path | None = None):
         self.folder = Path(folder) if folder else DATA / "sprites"
+        self.bundled = Path(bundled) if bundled else None
         self.base = (base or BASE).rstrip("/")
         self.key = key                  # the names a string key may take; an int key is a species
         self.online = online            # False reads the cache and never touches the network
@@ -209,43 +210,56 @@ class SpriteCache:
         self.memory: dict[tuple[int | str, bool], bytes | None] = {}
         self.crops: dict[tuple[int | str, bool], tuple[int, int, int, int] | None] = {}
         self.index: dict | None = None
+        self.bundled_index: dict | None = None
         self.prefetcher = None          # prefetch()'s single thread, made on first use
 
+    @staticmethod
+    def _path_in(root: Path, species: int | str, shiny: bool) -> Path:
+        return root / ("shiny" if shiny else "normal") / f"{species}.png"
+
     def _path(self, species: int | str, shiny: bool) -> Path:
-        return self.folder / ("shiny" if shiny else "normal") / f"{species}.png"
+        return self._path_in(self.folder, species, shiny)
 
     def _valid_key(self, species: int | str) -> bool:
         return ((type(species) is int and species > 0 and self.key == POKEMON_KEY) or
                 (isinstance(species, str) and len(species) <= 64 and re.fullmatch(self.key, species) is not None))
 
     def cached(self, species: int | str, shiny: bool = False) -> bytes | None:
-        """The sprite on disk, or None. Never touches the network; a damaged file is removed."""
+        """The sprite on disk, else one from the bundled pack; None for neither. Never touches the
+        network; a damaged file in the writable cache is removed."""
         if not self._valid_key(species):
             return None
         key = (species, shiny)
         if self.memory.get(key):
             return self.memory[key]
-        path = self._path(species, shiny)
-        try:
-            with path.open("rb") as source:
-                raw = source.read(MAX_BYTES + 1)
-        except OSError:
-            return None
-        known = self._indexed().get(self._name(species, shiny))
-        if (isinstance(known, dict) and known.get("sha256") == hashlib.sha256(raw).hexdigest()
-                and (known.get("bounds") is None or _box(known["bounds"]))):
-            self.crops[key] = tuple(known["bounds"]) if known["bounds"] else None
-            self.memory[key] = raw
-            return raw
-        data = clean(raw)
-        if data is not None:
-            self.memory[key] = data
-            self._remember(species, shiny, data)
-            return data
-        try:
-            path.unlink()
-        except OSError:
-            pass
+        for root in (self.folder, self.bundled):
+            if root is None:
+                continue
+            path = self._path_in(root, species, shiny)
+            try:
+                with path.open("rb") as source:
+                    raw = source.read(MAX_BYTES + 1)
+            except OSError:
+                continue
+            known = self._indexed(root).get(self._name(species, shiny))
+            if (isinstance(known, dict) and known.get("sha256") == hashlib.sha256(raw).hexdigest()
+                    and (known.get("bounds") is None or _box(known["bounds"]))):
+                self.crops[key] = tuple(known["bounds"]) if known["bounds"] else None
+                self.memory[key] = raw
+                return raw
+            data = clean(raw)
+            if data is not None:
+                self.memory[key] = data
+                if root == self.folder:
+                    self._remember(species, shiny, data)
+                else:
+                    self.crops[key] = bounds(data)
+                return data
+            if root == self.folder:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
         return None
 
     def crop(self, species: int | str, shiny: bool, data: bytes) -> tuple[int, int, int, int] | None:
@@ -257,14 +271,23 @@ class SpriteCache:
     def _name(species: int | str, shiny: bool) -> str:
         return f"{'shiny' if shiny else 'normal'}/{species}"
 
-    def _indexed(self) -> dict:
-        if self.index is None:
-            try:
-                index = json.loads((self.folder / INDEX).read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                index = {}
-            self.index = index if isinstance(index, dict) else {}
-        return self.index
+    def _indexed(self, root: Path | None = None) -> dict:
+        root = self.folder if root is None else root
+        if root == self.folder:
+            if self.index is None:
+                self.index = self._read_index(root)
+            return self.index
+        if self.bundled_index is None:
+            self.bundled_index = self._read_index(root)
+        return self.bundled_index
+
+    @staticmethod
+    def _read_index(root: Path) -> dict:
+        try:
+            index = json.loads((root / INDEX).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            index = {}
+        return index if isinstance(index, dict) else {}
 
     def _remember(self, species: int | str, shiny: bool, data: bytes) -> None:
         crop = bounds(data)
@@ -388,9 +411,11 @@ class SpriteCache:
         return removed
 
 
-CACHE = SpriteCache()
+CACHE = SpriteCache(bundled=Path(ROOT) / "src" / "sprites")
 # Item and ball icons, and the Gen 8 ribbons a Sword/Shield card carries, from the same repository; inside
-# CACHE's folder, so its clear() removes them too.
+# CACHE's folder, so its clear() removes them too. The bundled pack is read-only and ships with the app.
 ICON_BASE = os.environ.get("POKELDN_ICON_BASE", "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites")
-ITEMS = SpriteCache(DATA / "sprites" / "items", f"{ICON_BASE}/items", key=ICON_KEY)
-RIBBONS = SpriteCache(DATA / "sprites" / "ribbons", f"{ICON_BASE}/ribbons/generation-viii", key=ICON_KEY)
+ITEMS = SpriteCache(DATA / "sprites" / "items", f"{ICON_BASE}/items", key=ICON_KEY,
+                    bundled=Path(ROOT) / "src" / "sprites" / "items")
+RIBBONS = SpriteCache(DATA / "sprites" / "ribbons", f"{ICON_BASE}/ribbons/generation-viii", key=ICON_KEY,
+                      bundled=Path(ROOT) / "src" / "sprites" / "ribbons")

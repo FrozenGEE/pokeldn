@@ -11,6 +11,8 @@
 
 # pokeldn
 
+<p align="center"><a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a></p>
+
 pokeldn trades with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to a
 computer by USB. Nothing is installed on the console.
 
@@ -18,6 +20,30 @@ The desktop app runs on macOS (Apple silicon and Intel), Windows and Linux. The 
 the board on the phone's USB port, and on iPhone and iPad, with the board reached over Bluetooth.
 Command-line tools run from source, and the docs describe the games' local wireless protocols. AI tools helped reverse engineer
 those protocols and write parts of the code.
+
+## Changes in this fork
+
+This fork adds hardware support for Xiaozhi AI (LCKFB / 立创·实战派 ESP32-S3). The screen,
+speaker, microphone and camera all work. The microphone and camera have no real use in this
+project and are adapted for completeness only. The board runs the pokeldn radio firmware.
+
+| Item | Version |
+|---|---|
+| Firmware (upstream) | **1.10.0** |
+| GEE board build | **0.9.6** |
+| pokeldn app | **0.60.2** |
+
+- **GEE board port**: ST7789 320x240 screen, ES8311 speaker, ES7210 microphone and GC0308
+  camera; exchange sound effects (ball-in, link, ball-out, exchange and received tunes); 75%
+  default volume; Poké Ball wobble animation on the idle/search pages. The exchange sound
+  effects are original GB APU-style synthesis, not samples from the official games.
+- **Session panel**: mirrors the board's screen at 320x240 and shows it at 300x225 (4:3); the
+  in-app animation matches the board's animation.
+- **Board page**: on an ESP32-S3, the Wireless install flashes the GEE board image; installed
+  firmware rows offer **Reinstall**.
+- **Chinese README**: [README.zh-CN.md](README.zh-CN.md).
+
+Tested on Windows only; macOS, Linux, Android and iOS need your own testing.
 
 ## Supported games
 

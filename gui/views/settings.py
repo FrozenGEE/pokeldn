@@ -8,6 +8,7 @@ import flet as ft
 from gui import theme as t
 from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
+from pokeldn.app import build_info
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE, ITEMS, RIBBONS
 from pokeldn.app.settings import GEN3, VERSION_GAME, switch_ids_valid
@@ -171,7 +172,17 @@ class SettingsView:
                                       self.update_state], spacing=10),
                    tr('settings.asks_github_for_a_newer_pokeldn_when_the_app_starts_and_b07880', "Asks GitHub for a newer pokeldn when the app starts, and each installed plugin's own address for a newer version of it. Nothing about you or your games is sent."),
                    trailing=t.switch(s.check_updates, lambda e: self.save("check_updates", e.control.value))),
-            t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Row([link(label, url) for label, url in LINKS], spacing=4),
+            t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Column([
+                ft.Row([link(label, url) for label, url in LINKS], spacing=4),
+                ft.Divider(height=1, color=ft.Colors.with_opacity(0.08, "#FFFFFF")),
+                *[ft.Row([t.text(label, 12, t.MUTED, width=150), t.text(value, 13)], spacing=8)
+                  for label, value in (
+                      (tr('settings.firmware_version', 'Firmware version'), build_info.firmware_version()),
+                      (tr('settings.gee_build', 'GEE build'), build_info.GEE_BUILD),
+                      (tr('settings.pokeldn_version', 'pokeldn version'), __version__),
+                      (tr('settings.build_date', 'Build date'), build_info.BUILD_DATE),
+                  )],
+            ], spacing=6),
                    tr('settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838', 'pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3).')),
         ]
 

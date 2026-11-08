@@ -8,10 +8,11 @@ import os
 import queue
 import threading
 import unicodedata
+from pathlib import Path
 
 from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.sprites import BASE, SpriteCache, pixels
-from pokeldn.app.paths import DATA
+from pokeldn.app.paths import DATA, ROOT
 
 # At most 10 characters: the title shares the top row with a 64-pixel sprite.
 TITLES = {"frlg": "FR/LG", "lgpe": "Let's Go", "bdsp": "BD/SP", "swsh": "Sw/Sh", "pla": "Arceus",
@@ -27,8 +28,9 @@ GIFTED_HOLD_S = 6
 GBA_LAST = 386              # FireRed/LeafGreen draw every species to Deoxys, 64x64
 
 # The GBA sprites suit a one-bit 64-row screen best; later species come from the default set.
-GBA = SpriteCache(DATA / "sprites" / "screen-gba", f"{BASE}/versions/generation-iii/firered-leafgreen")
-LATER = SpriteCache(DATA / "sprites" / "screen")
+GBA = SpriteCache(DATA / "sprites" / "screen-gba", f"{BASE}/versions/generation-iii/firered-leafgreen",
+                  bundled=Path(ROOT) / "src" / "sprites" / "screen-gba")
+LATER = SpriteCache(DATA / "sprites" / "screen", bundled=Path(ROOT) / "src" / "sprites" / "screen")
 
 _jobs: queue.Queue = queue.Queue()
 _worker: threading.Thread | None = None
