@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import sys
 import tomllib
 from dataclasses import dataclass, field, replace
@@ -283,6 +284,24 @@ def folder() -> Path:
     return DATA / "plugins"
 
 
+def seed_bundled() -> None:
+    """Install the language pack shipped in src/plugins once, without replacing a player's copy."""
+    from pokeldn.app.paths import ROOT
+    bundled = Path(ROOT) / "src" / "plugins"
+    if not bundled.is_dir():
+        return
+    target = folder()
+    target.mkdir(parents=True, exist_ok=True)
+    for source in bundled.iterdir():
+        if source.is_dir() and (source / "plugin.toml").is_file():
+            dest = target / source.name
+            if not dest.exists():
+                try:
+                    shutil.copytree(source, dest)
+                except OSError:
+                    pass
+
+
 def data_folder(plugin_id: str) -> Path:
     from pokeldn.app.paths import DATA
     return DATA / "plugin-data" / plugin_id
@@ -294,7 +313,8 @@ def enabled() -> list[str]:
     try:
         data = json.loads((DATA / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
+        # A fresh install has no settings file: the bundled Simplified Chinese pack is on by default.
+        return ["community-zh-hans"] if (folder() / "community-zh-hans").is_dir() else []
     ids = data.get("plugins", []) if isinstance(data, dict) else []
     return [i for i in ids if isinstance(i, str)]
 

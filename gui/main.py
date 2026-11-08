@@ -29,7 +29,9 @@ os.environ.pop("POKELDN_RADIO", None)
 
 from pokeldn.app.i18n import select, t as tr  # noqa: E402
 from pokeldn.app.settings import load as load_settings  # noqa: E402
+from pokeldn import plugins  # noqa: E402
 _launch_settings = load_settings()
+plugins.seed_bundled()
 select(_launch_settings.app_language)
 
 import flet as ft  # noqa: E402

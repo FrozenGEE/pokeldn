@@ -31,8 +31,8 @@ class Settings:
     received: str = str(RECEIVED)
     radio_port: str = ""
     radio: str = ""         # external radio scheme (pokeldn.ldn.radios); empty: the board
-    plugins: list = field(default_factory=list)   # plugin ids turned on
-    app_language: str = ""   # language-pack plugin id; empty selects English
+    plugins: list = field(default_factory=lambda: ["community-zh-hans"])   # plugin ids turned on
+    app_language: str = "community-zh-hans"   # language-pack plugin id; empty selects English
     baud: int = 921600
     tx_power: float = 0     # the board's transmit power cap in dBm; 0: the driver's maximum
     capture: bool = True
@@ -40,7 +40,7 @@ class Settings:
     board_trace: bool = False
     board_screen: bool = False   # draw the board's screen in the Session panel (pokeldn.app.screen_render)
     larger_text: bool = False    # every text 15 % larger (gui/theme.py text_scale); read at launch
-    retry_trades: bool = False   # a trade run that failed starts again on the trades left (gui/views/games.py)
+    retry_trades: bool = True   # a trade run that failed starts again on the trades left (gui/views/games.py)
     sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
     check_updates: bool = True   # ask GitHub for a newer release at launch
     # "empty" or "made": what the bank and the builder put in a HOME tracker HOME never issued (docs/gui.md,
@@ -60,7 +60,7 @@ class Settings:
     gender: int = 0
     # With per_game_trainer, game -> the fields of the trainer above it replaces for that game: ot, gender, language,
     # and tid and sid as that game shows them (docs/gui.md, A trainer per game).
-    per_game_trainer: bool = False
+    per_game_trainer: bool = True
     game_trainers: dict = field(default_factory=dict)
     # "gba" or "switch" -> the newest console trainer a run reported (pokeldn.console_trainer), for Find mine.
     found_trainers: dict = field(default_factory=dict)

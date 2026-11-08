@@ -21,6 +21,10 @@ MAX_BYTES = 1 << 20
 MAX_ENTRIES = 500
 BUILT_IN = "https://raw.githubusercontent.com/Decryptu/pokeldn-decrypt-plugins/main/" + FILE
 BUILT_IN_NAME = "Decrypt's plugins"
+# The community Simplified Chinese language pack this build ships and follows by default.
+LANGUAGE = "https://raw.githubusercontent.com/ZsyzLahz/pokeldn-zh-hans/HEAD/" + FILE
+LANGUAGE_NAME = "pokeldn-zh-hans"
+BUILT_INS = (BUILT_IN, LANGUAGE)
 SLUG = re.compile(r"([A-Za-z0-9-]{1,39})/([\w.-]{1,100})")
 GITHUB = re.compile(r"https://github\.com/([A-Za-z0-9-]{1,39})/([\w.-]{1,100}?)(?:\.git)?(?:/.*)?")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -57,7 +61,7 @@ class Source:
 
     @property
     def built_in(self) -> bool:
-        return self.url == BUILT_IN
+        return self.url in BUILT_INS
 
     def entry(self, plugin_id: str) -> Entry | None:
         return next((e for e in self.entries if e.id == plugin_id), None)
@@ -129,21 +133,21 @@ def _cache_file(url: str) -> Path:
 
 
 def followed() -> list[str]:
-    """The built-in source first, then the ones the player added, in the order added."""
+    """The built-in sources first, then the ones the player added, in the order added."""
     try:
         added = json.loads(_list_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         added = []
-    added = [u for u in added if isinstance(u, str) and allowed(u) and u != BUILT_IN] \
+    added = [u for u in added if isinstance(u, str) and allowed(u) and u not in BUILT_INS] \
         if isinstance(added, list) else []
-    return [BUILT_IN, *dict.fromkeys(added)]
+    return [BUILT_IN, LANGUAGE, *dict.fromkeys(added)]
 
 
 def _write(urls: list[str]) -> None:
     path = _list_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps([u for u in urls if u != BUILT_IN], indent=1), encoding="utf-8")
+    tmp.write_text(json.dumps([u for u in urls if u not in BUILT_INS], indent=1), encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -162,7 +166,7 @@ def add(text: str) -> Source:
 
 def remove(url: str) -> None:
     """Stops following a source; the plugins installed from it stay installed."""
-    if url == BUILT_IN:
+    if url in BUILT_INS:
         raise SourceError("The built-in source cannot be removed.")
     with _lock:
         _write([u for u in followed() if u != url])
@@ -177,7 +181,7 @@ def cached(url: str) -> Source:
         source.fetched = float(stored.get("fetched", 0))
         return source
     except (OSError, ValueError, KeyError, TypeError, SourceError):
-        return Source(url, BUILT_IN_NAME if url == BUILT_IN else "")
+        return Source(url, BUILT_IN_NAME if url == BUILT_IN else LANGUAGE_NAME if url == LANGUAGE else "")
 
 
 def fetch(url: str) -> Source:

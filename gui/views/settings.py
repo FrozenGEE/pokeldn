@@ -177,7 +177,7 @@ class SettingsView:
                 ft.Divider(height=1, color=ft.Colors.with_opacity(0.08, "#FFFFFF")),
                 *[ft.Row([t.text(label, 12, t.MUTED, width=150), t.text(value, 13)], spacing=8)
                   for label, value in (
-                      (tr('settings.firmware_version', 'Firmware version'), build_info.firmware_version()),
+                      (tr('settings.firmware_version', 'ESP32 firmware'), build_info.firmware_version()),
                       (tr('settings.gee_build', 'GEE build'), build_info.GEE_BUILD),
                       (tr('settings.pokeldn_version', 'pokeldn version'), __version__),
                       (tr('settings.build_date', 'Build date'), build_info.BUILD_DATE),
