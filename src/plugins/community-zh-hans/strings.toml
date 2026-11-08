@@ -1777,6 +1777,7 @@
 "settings.build_date" = "构建日期"
 "settings.firmware_version" = "ESP32 固件"
 "settings.gee_build" = "GEE 构建"
+"settings.language_pack_version" = "汉化包版本"
 "settings.pokeldn_version" = "pokeldn 版本"
 "settings.adds_the_board_s_counters_and_every_serial_message_to_t_615de0" = "将设备的计数器与每条串口消息加入会话日志。仅在有人要求你报告无线电问题时使用。"
 "settings.allow_illegal" = "允许非合法宝可梦"

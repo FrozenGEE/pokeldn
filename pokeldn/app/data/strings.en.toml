@@ -1785,6 +1785,7 @@
 "settings.build_date" = "Build date"
 "settings.firmware_version" = "ESP32 firmware"
 "settings.gee_build" = "GEE build"
+"settings.language_pack_version" = "Language pack"
 "settings.pokeldn_version" = "pokeldn version"
 "settings.adds_the_board_s_counters_and_every_serial_message_to_t_615de0" = "Adds the board's counters and every serial message to the session record. Only for radio problems someone asked you to report."
 "settings.allow_illegal" = "Allow non-legal Pokemon"

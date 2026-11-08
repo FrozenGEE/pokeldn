@@ -7,7 +7,7 @@ android {
     namespace 'org.pokeldn.usbprobe'
     compileSdk 36
     defaultConfig {
-        applicationId 'org.pokeldn.usbprobe'
+        applicationId System.getenv('POKELDN_ANDROID_APPLICATION_ID') ?: 'org.pokeldn.gee'
         minSdk 26
         targetSdk 36
         // The release workflow numbers each build: a higher versionCode installs as an update.

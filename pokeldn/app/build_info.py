@@ -6,6 +6,11 @@ from pokeldn.app.paths import ROOT
 # This fork's own build label and the day it was built. The firmware version itself follows upstream
 # (firmware/esp32/version.txt); bump GEE_BUILD for each GEE release.
 GEE_BUILD = "0.9.6"
+GEE_REPO = "https://github.com/FrozenGEE/pokeldn"
+GEE_REPO_LABEL = "FrozenGEE/pokeldn"
+LANGUAGE_VERSION = "1.0.5"
+LANGUAGE_REPO = "https://github.com/ZsyzLahz/pokeldn-zh-hans"
+LANGUAGE_REPO_LABEL = "ZsyzLahz/pokeldn-zh-hans"
 BUILD_DATE = "2026-11-08"
 
 

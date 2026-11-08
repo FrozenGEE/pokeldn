@@ -104,6 +104,12 @@ class SettingsView:
         def link(label, url):
             return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
 
+        def version_row(label, value, link_label="", url=""):
+            shown = [t.text(value, 13)]
+            if link_label:
+                shown.append(link(f"({link_label})", url))
+            return ft.Row([t.text(label, 12, t.MUTED, width=150), ft.Row(shown, spacing=6)], spacing=8)
+
         def section(label):
             return ft.Container(t.text(label, 12, t.MUTED, weight=ft.FontWeight.W_600),
                                 padding=ft.Padding(4, 8, 0, 0))
@@ -175,12 +181,15 @@ class SettingsView:
             t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Column([
                 ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                 ft.Divider(height=1, color=ft.Colors.with_opacity(0.08, "#FFFFFF")),
-                *[ft.Row([t.text(label, 12, t.MUTED, width=150), t.text(value, 13)], spacing=8)
-                  for label, value in (
-                      (tr('settings.firmware_version', 'ESP32 firmware'), build_info.firmware_version()),
-                      (tr('settings.gee_build', 'GEE build'), build_info.GEE_BUILD),
-                      (tr('settings.pokeldn_version', 'pokeldn version'), __version__),
-                      (tr('settings.build_date', 'Build date'), build_info.BUILD_DATE),
+                *[version_row(label, value, link_label, url)
+                  for label, value, link_label, url in (
+                      (tr('settings.pokeldn_version', 'pokeldn version'), __version__, "", ""),
+                      (tr('settings.firmware_version', 'ESP32 firmware'), build_info.firmware_version(), "", ""),
+                      (tr('settings.gee_build', 'GEE build'), build_info.GEE_BUILD,
+                       build_info.GEE_REPO_LABEL, build_info.GEE_REPO),
+                      (tr('settings.language_pack_version', 'Language pack'), build_info.LANGUAGE_VERSION,
+                       build_info.LANGUAGE_REPO_LABEL, build_info.LANGUAGE_REPO),
+                      (tr('settings.build_date', 'Build date'), build_info.BUILD_DATE, "", ""),
                   )],
             ], spacing=6),
                    tr('settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838', 'pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3).')),
